@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.5.0';
+  const VERSION = '31.6.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -20,7 +20,7 @@
   const LC_USD_VALUE = 10;
   const RUB_PER_LC = RUB_PER_USD * LC_USD_VALUE;
   const CURRENCY = 'RUB';
-  const PRICE_VERSION = 'market-multi-v31-5';
+  const PRICE_VERSION = 'market-multi-v31-6';
   const CURRENCY_OPTIONS = Object.freeze({
     RUB:{label:'₽', name:'Рубли', rate:1, suffix:'₽', decimals:0},
     USD:{label:'$', name:'Доллары', rate:RUB_PER_USD, prefix:'$', decimals:2},
@@ -32,6 +32,10 @@
   const AD_REWARD = 750;
   const BATTLE_PASS_PRICE = 200000;
   const BATTLE_PASS_MAX_LEVEL = 100;
+  const SEASONAL_PASS_PRICE = 20 * RUB_PER_USD; // $20, хранится в рублях
+  const SEASONAL_PASS_MAX_LEVEL = 30;
+  const SEASONAL_PASS_DURATION = 30 * 24 * 60 * 60 * 1000;
+  const SEASONAL_PASS_SEASON_ID = 'summer-dragon-v1';
   const PROMO_CODES = Object.freeze({
     WELCOME30: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
     KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 20000, TEST100K: 15000
@@ -197,8 +201,29 @@
   let wheelDeg = 0;
   let currentCase = null;
 
-  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],battlePass:defaultBattlePass(),createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),createdAt:Date.now(),savedAt:Date.now()}; }
   function defaultBattlePass(){ return {active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
+  function defaultSeasonalPass(){ return {seasonId:SEASONAL_PASS_SEASON_ID,seasonStartedAt:Date.now(),active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
+  function normalizeSeasonalPass(sp, fallbackStart){
+    const base = defaultSeasonalPass();
+    sp = (sp && typeof sp === 'object') ? sp : {};
+    const out = Object.assign(base, sp);
+    if(out.seasonId !== SEASONAL_PASS_SEASON_ID){
+      out.seasonId = SEASONAL_PASS_SEASON_ID;
+      out.seasonStartedAt = Math.max(0, Math.round(toNum(fallbackStart, Date.now())));
+      out.active = false; out.level = 0; out.activatedAt = 0; out.current = {level:1, counts:{}}; out.rewards = []; out.vouchers = [];
+    }
+    out.seasonStartedAt = Math.max(0, Math.round(toNum(out.seasonStartedAt, fallbackStart || Date.now())));
+    out.active = !!out.active;
+    out.level = clamp(Math.round(toNum(out.level,0)),0,SEASONAL_PASS_MAX_LEVEL);
+    out.activatedAt = Math.max(0, Math.round(toNum(out.activatedAt,0)));
+    out.current = (out.current && typeof out.current === 'object') ? out.current : {level:out.level+1,counts:{}};
+    out.current.level = clamp(Math.round(toNum(out.current.level,out.level+1)),1,SEASONAL_PASS_MAX_LEVEL);
+    out.current.counts = (out.current.counts && typeof out.current.counts === 'object') ? out.current.counts : {};
+    out.rewards = Array.isArray(out.rewards) ? out.rewards.slice(0,80) : [];
+    out.vouchers = Array.isArray(out.vouchers) ? out.vouchers.slice(0,40) : [];
+    return out;
+  }
   function normalizeBattlePass(bp){
     const base = defaultBattlePass();
     bp = (bp && typeof bp === 'object') ? bp : {};
@@ -229,6 +254,7 @@
     s.adViews = (s.adViews && typeof s.adViews === 'object') ? s.adViews : {};
     s.usedPromos = Array.isArray(s.usedPromos) ? s.usedPromos.map(x=>String(x).toUpperCase()).slice(0,100) : [];
     s.battlePass = normalizeBattlePass(s.battlePass);
+    s.seasonalPass = normalizeSeasonalPass(s.seasonalPass, s.createdAt || Date.now());
     return s;
   }
   function normalizeInvItem(it){
@@ -269,7 +295,7 @@
       opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins,
       tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
       pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[],
-      battlePass:normalizeBattlePass(s.battlePass), createdAt:s.createdAt||Date.now(), savedAt:Date.now()
+      battlePass:normalizeBattlePass(s.battlePass), seasonalPass:normalizeSeasonalPass(s.seasonalPass, s.createdAt||Date.now()), createdAt:s.createdAt||Date.now(), savedAt:Date.now()
     };
   }
   function cleanupStorageBeforeLoad(){
@@ -988,6 +1014,8 @@
       if(a === 'redeem-promo') return redeemPromo();
       if(a === 'activate-battle-pass') return activateBattlePass();
       if(a === 'claim-battle-pass') return claimBattlePassReward();
+      if(a === 'activate-seasonal-pass') return activateSeasonalPass();
+      if(a === 'claim-seasonal-pass') return claimSeasonalPassReward();
       if(a === 'spin-wheel') return spinWheel();
       if(a === 'start-ad') return startAd();
       if(a === 'start-battle') return startBattle();
@@ -1029,6 +1057,7 @@
     if(page === 'wheel') return renderWheel();
     if(page === 'battle') return renderBattle();
     if(page === 'battle-pass') return renderBattlePass();
+    if(page === 'seasonal-pass') return renderSeasonalPass();
     if(page === 'ads') return renderAds();
     if(page === 'promos') return renderPromos();
     if(page === 'profile') return renderProfile();
@@ -1045,6 +1074,20 @@
     $$('.js-balance').forEach(x => x.textContent = fmt(state.balance));
     $$('.js-inv-count').forEach(x => x.textContent = String(state.inventory.length));
     $$('.js-version').forEach(x => x.textContent = VERSION);
+    updateSeasonalNavLinks();
+  }
+  function seasonalPassState(){ state.seasonalPass = normalizeSeasonalPass(state.seasonalPass, state.createdAt || Date.now()); return state.seasonalPass; }
+  function seasonalPassAvailable(sp){ sp = sp || seasonalPassState(); return Date.now() < sp.seasonStartedAt + SEASONAL_PASS_DURATION; }
+  function seasonalPassEndsAt(sp){ sp = sp || seasonalPassState(); return sp.seasonStartedAt + SEASONAL_PASS_DURATION; }
+  function seasonalTimeLeftText(){
+    const left = Math.max(0, seasonalPassEndsAt() - Date.now());
+    const d = Math.floor(left/86400000), h = Math.floor(left%86400000/3600000), m = Math.floor(left%3600000/60000);
+    if(left <= 0) return 'сезон завершён';
+    return `${d} дн. ${h} ч. ${m} мин.`;
+  }
+  function updateSeasonalNavLinks(){
+    const show = seasonalPassAvailable();
+    $$('.js-seasonal-pass-link').forEach(a => { a.style.display = show ? '' : 'none'; });
   }
   function addToasts(){ if(!$('.toast-wrap')) document.body.insertAdjacentHTML('beforeend','<div class="toast-wrap"></div>'); }
   function toast(text,type=''){
@@ -1974,16 +2017,18 @@
   }
   function bpEvent(event, payload={}){
     const bp = bpState();
-    if(!bp.active || bp.level >= BATTLE_PASS_MAX_LEVEL) return;
-    const level = bp.level + 1;
-    const m = bpMissionForLevel(level);
-    if(!bp.current || bp.current.level !== level) bp.current = {level, counts:{}};
-    let changed = false;
-    m.reqs.forEach((req,idx)=>{
-      const add = bpAddToReq(req,payload,event);
-      if(add > 0){ const key = bpReqKey(req,idx); bp.current.counts[key] = Math.min(Math.round(toNum(req.need,1)), Math.round(toNum(bp.current.counts[key],0) + add)); changed = true; }
-    });
-    if(changed){ save(); if((document.body.dataset.page || '') === 'battle-pass') renderBattlePass(); }
+    if(bp.active && bp.level < BATTLE_PASS_MAX_LEVEL){
+      const level = bp.level + 1;
+      const m = bpMissionForLevel(level);
+      if(!bp.current || bp.current.level !== level) bp.current = {level, counts:{}};
+      let changed = false;
+      m.reqs.forEach((req,idx)=>{
+        const add = bpAddToReq(req,payload,event);
+        if(add > 0){ const key = bpReqKey(req,idx); bp.current.counts[key] = Math.min(Math.round(toNum(req.need,1)), Math.round(toNum(bp.current.counts[key],0) + add)); changed = true; }
+      });
+      if(changed){ save(); if((document.body.dataset.page || '') === 'battle-pass') renderBattlePass(); }
+    }
+    seasonalPassEvent(event, payload);
   }
   function activateBattlePass(){
     const bp = bpState();
@@ -2001,10 +2046,15 @@
     else pool = pool.filter(x => toNum(x.value,0) >= 700 && toNum(x.value,0) <= 16000);
     return pool.length ? pool : catalog.items;
   }
+  const FIXED_PRIZE_IMAGES = Object.freeze({
+    'sticker | team dignitas (holo) | katowice 2014':'https://cdn.csgoskins.gg/public/uih/products/aHR0cHM6Ly9jZG4uY3Nnb3NraW5zLmdnL3B1YmxpYy9pbWFnZXMvYnVja2V0cy9lY29uL3N0aWNrZXJzL2Vtc2thdG93aWNlMjAxNC9kaWduaXRhc19ob2xvLmFhZGE2ODQzNTgwMGI0YjRjZmIyZWYyOTlhYmY3ZjgxYWM1Y2ExMjcucG5n/auto/auto/85/notrim/13a12251bc42a5ed67eda770c9fced71.webp'
+  });
   function bpFindPrize(name, rarity='Covert', value=50000, category='skin'){
     const low = name.toLowerCase();
     const found = catalog.items.find(x => String(x.name||'').toLowerCase().includes(low));
-    return Object.assign({id:'bp-prize-'+slug(name), name, rarity, rarityColor:rarityColors[rarity]||'#ffd700', value, category, image:svgSkin(name,'#facc15','#ef4444'), weight:1}, found || {}, {name:(found && found.name) || name, value:(found && found.value && found.value > value*.4) ? found.value : value});
+    const fixed = FIXED_PRIZE_IMAGES[low] || '';
+    const image = fixed || realImageUrl(found && found.image) || svgSkin(name,'#facc15','#ef4444');
+    return Object.assign({id:'bp-prize-'+slug(name), name, rarity, rarityColor:rarityColors[rarity]||'#ffd700', value, category, image, weight:1}, found || {}, {name:(found && found.name) || name, value:(found && found.value && found.value > value*.4) ? found.value : value, image});
   }
   function bpFinalPool(){
     return [
@@ -2013,7 +2063,7 @@
       bpFindPrize('Sticker | iBUYPOWER (Holo) | Katowice 2014','Extraordinary',860000,'sticker'),
       bpFindPrize('Sticker | Titan (Holo) | Katowice 2014','Extraordinary',520000,'sticker'),
       bpFindPrize('Sticker | Reason Gaming (Holo) | Katowice 2014','Extraordinary',250000,'sticker'),
-      bpFindPrize('Sticker | Dignitas (Holo) | Katowice 2014','Extraordinary',180000,'sticker')
+      bpFindPrize('Sticker | Team Dignitas (Holo) | Katowice 2014','Extraordinary',180000,'sticker')
     ];
   }
   function bpApplyReward(level, reward){
@@ -2076,6 +2126,159 @@
     const missionHtml = level >= BATTLE_PASS_MAX_LEVEL ? `<div class="bp-current done"><h2>Пасс завершён</h2><p>Все 100 уровней закрыты. Финальный Dragon Hoard Case уже выдан.</p></div>` : `<div class="bp-current"><div class="bp-current-head"><span class="kicker">Текущее задание</span><h2>${esc(mission.title)}</h2><p>Награда: <b>${esc(bpRewardLabel(mission.reward))}</b></p></div><div class="bp-reqs">${progress.map(x=>`<div class="bp-req"><div><b>${esc(bpReqTitle(x.req))}</b><small>${Math.min(x.got,x.need).toLocaleString('ru-RU')} / ${x.need.toLocaleString('ru-RU')}</small></div><div class="bp-bar"><span style="width:${x.pct}%"></span></div></div>`).join('')}</div><button class="btn primary huge" data-action="claim-battle-pass" ${done?'':'disabled'}>${done?'Забрать награду':'Задание не выполнено'}</button></div>`;
     const levels = Array.from({length:BATTLE_PASS_MAX_LEVEL},(_,i)=>i+1).map(l=>{ const r=bpRewardForLevel(l); return `<div class="bp-node ${l<=level?'claimed':l===currentLevel?'current':'locked'}" title="Уровень ${l}: ${esc(bpRewardLabel(r))}"><b>${l}</b><span>${r.type==='finalCase'?'🐉':r.type==='promo'?'CODE':r.type==='coins'?CURRENCY_OPTIONS[activeCurrency()].label:r.type==='case'?'CASE':'ITEM'}</span></div>`; }).join('');
     root.innerHTML = `<section class="bp-hero"><div><span class="kicker">Dragon Hoard Battle-pass</span><h2>100 уровней охоты за древним дропом</h2><p>Сложный статический pass для GitHub Pages: задания идут последовательно после активации. Нужно открывать конкретные кейсы, играть battle, делать контракты, ловить редкие дропы и тратить баланс.</p><div class="bp-price">Активация: <b>${fmt(BATTLE_PASS_PRICE)}</b></div>${bp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-battle-pass">Активировать за ${fmt(BATTLE_PASS_PRICE)}</button>`}</div><div class="bp-final"><h3>Финал 100 уровня</h3><p>Dragon Hoard Case гарантированно выдаёт один из трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${imgTag(x.image,x.name)}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${BATTLE_PASS_MAX_LEVEL}</h2><p>${bp.active ? 'Прогресс учитывается только после покупки pass.' : 'Пасс ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта уровней</h2><p>Каждый уровень даёт предмет, pass-кейс, промокод или баланс. 25/50/75/100 — усиленные контрольные призы.</p></div></div><div class="bp-level-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние награды</h3><div class="bp-history">${bp.rewards.length ? bp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Полученные pass-промокоды</h3><div class="promo-used">${bp.vouchers.length ? bp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на уровнях 7, 14, 21...</p>'}</div></article></section>`;
+  }
+
+
+  function seasonalMissionForLevel(level){
+    const names = ['Kilowatt','Revolution','Recoil','Dreams','Fracture','Snakebite','Clutch','Prisma','Spectrum','CS20','Fever','Gallery'];
+    const c = bpFindCase(names[(level-1) % names.length], level);
+    const groups = [
+      ['classic','Классические'],['stickers','Наклейки'],['quality','Кейсы по качеству'],['limited','Лимитированная серия'],['extras','Агенты и другое'],['special','Ножи и перчатки']
+    ];
+    const g = groups[(level-1) % groups.length];
+    const stage = Math.floor((level-1)/5);
+    const mod = level % 6;
+    let reqs;
+    if(level === 1) reqs = [{type:'openAny', need:2, unit:'открытия'}];
+    else if(level === 5) reqs = [{type:'openCase', caseId:c.id, caseName:c.name, need:5, unit:'открытий'}];
+    else if(level === 10) reqs = [{type:'dropRarity', rarity:'purplePlus', label:'фиолетовый или выше', need:2, unit:'дропа'}];
+    else if(level === 15) reqs = [{type:'sellValue', need:6500, unit:'₽'}];
+    else if(level === 20) reqs = [{type:'battlePlay', need:3, unit:'баттла'}];
+    else if(level === 25) reqs = [{type:'contract', need:2, unit:'контракта'}];
+    else if(level === 30) reqs = [
+      {type:'openGroup', group:'stickers', groupName:'Наклейки', need:10, unit:'открытий'},
+      {type:'dropRarity', rarity:'pinkPlus', label:'розовый или выше', need:2, unit:'дропа'},
+      {type:'upgradeTry', need:2, unit:'апгрейда'}
+    ];
+    else if(mod === 1) reqs = [{type:'openGroup', group:g[0], groupName:g[1], need:Math.round(3 + stage*1.5), unit:'открытий'}];
+    else if(mod === 2) reqs = [{type:'fastOpen', need:Math.round(3 + stage), unit:'быстрых открытий'}];
+    else if(mod === 3) reqs = [{type:'wheel', need:1, unit:'прокрутка'}];
+    else if(mod === 4) reqs = [{type:'openCase', caseId:c.id, caseName:c.name, need:Math.round(3 + stage*1.4), unit:'открытий'}];
+    else if(mod === 5) reqs = [{type:'upgradeTry', need:1 + Math.floor(stage/2), unit:'апгрейд'}];
+    else reqs = [{type:'sellValue', need:Math.round(1500 + stage*1600), unit:'₽'}];
+    const chapter = stage < 2 ? 'Старт сезона' : stage < 4 ? 'Летний контракт' : stage < 5 ? 'Охота за наклейками' : 'Финальный рывок';
+    return {level, title:`Сезонный уровень ${level}: ${chapter}`, reqs, reward:seasonalRewardForLevel(level)};
+  }
+  function seasonalRewardForLevel(level){
+    if(level === 30) return {type:'seasonalCase', label:'Season Final Case', text:'финальный сезонный кейс'};
+    if(level % 10 === 0) return {type:'item', tier:'premium', label:'Сильный сезонный предмет', text:'дорогой, но без легендарного финала'};
+    if(level % 5 === 0) return {type:'case', tier:'mid', label:'Season Drop Case', text:'случайный предмет среднего пула'};
+    if(level % 4 === 0) return {type:'promo', amount:Math.round(900 + level*120), label:'Сезонный промокод'};
+    if(level % 3 === 0) return {type:'item', tier:'seasonal', label:'Сезонный предмет'};
+    return {type:'coins', amount:Math.round(500 + level*90), label:'Баланс'};
+  }
+  function seasonalMissionProgress(m){
+    const sp = seasonalPassState();
+    if(!sp.current || sp.current.level !== m.level) sp.current = {level:m.level, counts:{}};
+    return m.reqs.map((req,idx) => {
+      const key = bpReqKey(req, idx);
+      const got = Math.max(0, Math.round(toNum(sp.current.counts[key],0)));
+      const need = Math.max(1, Math.round(toNum(req.need,1)));
+      return {req, key, got, need, pct:clamp(got / need * 100, 0, 100), done:got >= need};
+    });
+  }
+  function seasonalMissionDone(m){ return seasonalMissionProgress(m).every(x=>x.done); }
+  function seasonalPassEvent(event, payload={}){
+    const sp = seasonalPassState();
+    if(!seasonalPassAvailable(sp) || !sp.active || sp.level >= SEASONAL_PASS_MAX_LEVEL) return;
+    const level = sp.level + 1;
+    const m = seasonalMissionForLevel(level);
+    if(!sp.current || sp.current.level !== level) sp.current = {level, counts:{}};
+    let changed = false;
+    m.reqs.forEach((req,idx)=>{
+      const add = bpAddToReq(req,payload,event);
+      if(add > 0){ const key = bpReqKey(req,idx); sp.current.counts[key] = Math.min(Math.round(toNum(req.need,1)), Math.round(toNum(sp.current.counts[key],0) + add)); changed = true; }
+    });
+    if(changed){ save(); if((document.body.dataset.page || '') === 'seasonal-pass') renderSeasonalPass(); }
+  }
+  function seasonalRewardPool(tier){
+    let pool = catalog.items.filter(Boolean);
+    if(tier === 'premium') pool = pool.filter(x => toNum(x.value,0) >= 3500 && toNum(x.value,0) <= 45000);
+    else if(tier === 'mid') pool = pool.filter(x => toNum(x.value,0) >= 900 && toNum(x.value,0) <= 18000);
+    else pool = pool.filter(x => toNum(x.value,0) >= 350 && toNum(x.value,0) <= 9000);
+    return pool.length ? pool : catalog.items;
+  }
+  function seasonalFinalPool(){
+    return [
+      bpFindPrize('AK-47 | Redline','Classified',5200,'skin'),
+      bpFindPrize('M4A1-S | Printstream','Covert',14500,'skin'),
+      bpFindPrize('AWP | Hyper Beast','Covert',12500,'skin'),
+      bpFindPrize('Sticker | Crown (Foil)','Extraordinary',36000,'sticker'),
+      bpFindPrize('Sticker | Titan | Katowice 2014','High Grade',65000,'sticker'),
+      bpFindPrize('Operation Pass','High Grade',2500,'collectible')
+    ];
+  }
+  function seasonalApplyReward(level, reward){
+    let label = reward.label || 'Сезонный приз';
+    let item = null;
+    if(reward.type === 'coins'){
+      earn(reward.amount, `Season pass уровень ${level}`);
+      label = `${fmt(reward.amount)} на баланс`;
+    }else if(reward.type === 'promo'){
+      const code = `SP${String(level).padStart(2,'0')}${Math.floor(1000 + stableNoise(Date.now()+':season:'+level)*9000)}`;
+      const sp = seasonalPassState(); sp.vouchers.unshift({code, amount:reward.amount, level, time:Date.now()});
+      earn(reward.amount, `Season pass промокод ${code}`);
+      label = `Промокод ${code} на ${fmt(reward.amount)}`;
+    }else if(reward.type === 'item'){
+      item = addItem(sample(seasonalRewardPool(reward.tier)), `season-pass lvl ${level}`);
+      addLive('Ты', item);
+      label = item.displayName || item.name;
+    }else if(reward.type === 'case'){
+      item = addItem(sample(seasonalRewardPool('mid')), `season drop-case lvl ${level}`);
+      addLive('Ты', item);
+      label = `Season Drop Case: ${item.displayName || item.name}`;
+    }else if(reward.type === 'seasonalCase'){
+      item = addItem(sample(seasonalFinalPool()), 'Season Final Case');
+      addLive('Ты', item);
+      label = `Season Final Case: ${item.displayName || item.name}`;
+    }
+    return {label, item};
+  }
+  function activateSeasonalPass(){
+    const sp = seasonalPassState();
+    if(!seasonalPassAvailable(sp)) return toast('Сезон завершён — вкладка больше недоступна','bad');
+    if(sp.active) return toast('Сезонный pass уже активирован','warn');
+    if(!spend(SEASONAL_PASS_PRICE, 'Активация Seasonal battle-pass')) return;
+    state.seasonalPass = Object.assign(sp, {active:true, level:0, activatedAt:Date.now(), current:{level:1, counts:{}}, rewards:[], vouchers:[]});
+    save();
+    toast('Сезонный battle-pass активирован на 30 уровней.', 'good');
+    renderSeasonalPass();
+  }
+  function claimSeasonalPassReward(){
+    const sp = seasonalPassState();
+    if(!seasonalPassAvailable(sp)) return toast('Сезон завершён','bad');
+    if(!sp.active) return toast('Сначала активируй сезонный pass','bad');
+    if(sp.level >= SEASONAL_PASS_MAX_LEVEL) return toast('Сезонный pass уже завершён','good');
+    const level = sp.level + 1;
+    const m = seasonalMissionForLevel(level);
+    if(!seasonalMissionDone(m)) return toast('Сезонное задание ещё не выполнено','warn');
+    const res = seasonalApplyReward(level, m.reward);
+    sp.level = level;
+    sp.current = {level:Math.min(SEASONAL_PASS_MAX_LEVEL, level + 1), counts:{}};
+    sp.rewards.unshift({level, label:res.label, time:Date.now()});
+    state.seasonalPass = sp;
+    save();
+    if(res.item) showDrop(res.item,null); else toast(`Season ${level}: ${res.label}`, 'good');
+    renderSeasonalPass();
+  }
+  function renderSeasonalPass(){
+    const root = $('#seasonalPassRoot'); if(!root) return;
+    const sp = seasonalPassState();
+    if(!seasonalPassAvailable(sp)){
+      updateSeasonalNavLinks();
+      root.innerHTML = `<section class="panel bp-expired"><span class="kicker">Season ended</span><h2>Сезонный battle-pass завершён</h2><p>30 дней истекли. Вкладка скрывается из меню, а новые задания и награды больше недоступны.</p><a class="btn primary" href="battle-pass.html">Перейти в основной Battle-pass</a></section>`;
+      return;
+    }
+    const level = sp.level || 0;
+    const currentLevel = Math.min(SEASONAL_PASS_MAX_LEVEL, level + 1);
+    const mission = seasonalMissionForLevel(currentLevel);
+    const progress = seasonalMissionProgress(mission);
+    const done = sp.active && level < SEASONAL_PASS_MAX_LEVEL && progress.every(x=>x.done);
+    const totalPct = clamp(level / SEASONAL_PASS_MAX_LEVEL * 100, 0, 100);
+    const finalPool = seasonalFinalPool();
+    const missionHtml = level >= SEASONAL_PASS_MAX_LEVEL ? `<div class="bp-current done"><h2>Сезонный pass завершён</h2><p>Все 30 уровней закрыты. Финальный сезонный кейс уже выдан.</p></div>` : `<div class="bp-current seasonal"><div class="bp-current-head"><span class="kicker">Текущее сезонное задание</span><h2>${esc(mission.title)}</h2><p>Награда: <b>${esc(bpRewardLabel(mission.reward))}</b></p></div><div class="bp-reqs">${progress.map(x=>`<div class="bp-req"><div><b>${esc(bpReqTitle(x.req))}</b><small>${Math.min(x.got,x.need).toLocaleString('ru-RU')} / ${x.need.toLocaleString('ru-RU')}</small></div><div class="bp-bar"><span style="width:${x.pct}%"></span></div></div>`).join('')}</div><button class="btn primary huge" data-action="claim-seasonal-pass" ${done?'':'disabled'}>${done?'Забрать награду':'Задание не выполнено'}</button></div>`;
+    const levels = Array.from({length:SEASONAL_PASS_MAX_LEVEL},(_,i)=>i+1).map(l=>{ const r=seasonalRewardForLevel(l); return `<div class="bp-node seasonal ${l<=level?'claimed':l===currentLevel?'current':'locked'}" title="Уровень ${l}: ${esc(bpRewardLabel(r))}"><b>${l}</b><span>${r.type==='seasonalCase'?'☀️':r.type==='promo'?'CODE':r.type==='coins'?CURRENCY_OPTIONS[activeCurrency()].label:r.type==='case'?'CASE':'ITEM'}</span></div>`; }).join('');
+    root.innerHTML = `<section class="bp-hero seasonal-hero"><div><span class="kicker">Limited Seasonal Battle-pass</span><h2>Сезон «Dragon Heat» — 30 уровней</h2><p>Лимитированная вкладка на 30 дней: задания проще основного pass, награды скромнее, финал — сезонный кейс без гарантированных Gungnir/Dragon Lore.</p><div class="bp-price">Активация: <b>${fmt(SEASONAL_PASS_PRICE,'USD')}</b> / ${fmt(SEASONAL_PASS_PRICE)}</div><div class="season-timer">До скрытия вкладки: <b>${esc(seasonalTimeLeftText())}</b></div>${sp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-seasonal-pass">Активировать за ${fmt(SEASONAL_PASS_PRICE,'USD')}</button>`}</div><div class="bp-final"><h3>Финал 30 уровня</h3><p>Season Final Case выдаёт один из сезонных трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${imgTag(x.image,x.name)}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${SEASONAL_PASS_MAX_LEVEL}</h2><p>${sp.active ? 'Прогресс учитывается только после покупки сезонного pass.' : 'Pass ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта сезонных уровней</h2><p>30 уровней: баланс, предметы, pass-промокоды и сезонные drop-кейсы. 10/20/30 — усиленные призы.</p></div></div><div class="bp-level-grid seasonal-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние сезонные награды</h3><div class="bp-history">${sp.rewards.length ? sp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Сезонные промокоды</h3><div class="promo-used">${sp.vouchers.length ? sp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на нескольких уровнях сезона.</p>'}</div></article></section>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
