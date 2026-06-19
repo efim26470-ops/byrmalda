@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cs2-case-lab-v16-network-first';
+const CACHE_NAME = 'cs2-case-lab-v18-network-first';
 self.addEventListener('install', event => { self.skipWaiting(); });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {

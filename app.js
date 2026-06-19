@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '16.0.0';
+  const VERSION = '18.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -365,6 +365,7 @@
   async function boot(){
     addToasts();
     initIOSViewport();
+    initScrollFix();
     initResponsiveMenu();
     initInstallPrompt();
     purgeOldCaches();
@@ -1193,17 +1194,51 @@
   }
 
   function initResponsiveMenu(){
-    const btn = $('.menu-toggle');
     const nav = $('.navlinks');
-    if(!btn || !nav) return;
+    if(!nav) return;
+    let btn = $('.menu-toggle');
+    if(!btn){
+      nav.insertAdjacentHTML('beforebegin', '<button class="menu-toggle" type="button" aria-label="Открыть меню" aria-expanded="false"><span class="menu-lines"><i></i><i></i><i></i></span><b>Меню</b></button>');
+      btn = $('.menu-toggle');
+    }
+    let backdrop = $('.menu-backdrop');
+    if(!backdrop){
+      document.body.insertAdjacentHTML('afterbegin', '<div class="menu-backdrop" aria-hidden="true"></div>');
+      backdrop = $('.menu-backdrop');
+    }
     const close = () => { document.body.classList.remove('nav-open'); btn.setAttribute('aria-expanded','false'); };
     const open = () => { document.body.classList.add('nav-open'); btn.setAttribute('aria-expanded','true'); };
     btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); document.body.classList.contains('nav-open') ? close() : open(); });
-    const backdrop = $('.menu-backdrop');
     if(backdrop) backdrop.addEventListener('click', close);
     nav.addEventListener('click', e => { if(e.target.closest('a')) close(); });
     document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
     window.addEventListener('resize', () => { if(innerWidth > 1100) close(); }, {passive:true});
+  }
+
+  function initScrollFix(){
+    const root = document.documentElement;
+    const body = document.body;
+    const unlock = () => {
+      try{
+        root.style.overflowY = 'auto';
+        body.style.overflowY = 'auto';
+        body.style.overflowX = 'hidden';
+        body.style.position = 'relative';
+        body.classList.remove('scroll-lock','no-scroll','lock-scroll');
+      }catch(e){}
+    };
+    unlock();
+    window.addEventListener('pageshow', unlock, {passive:true});
+    window.addEventListener('focus', unlock, {passive:true});
+    document.addEventListener('wheel', e => {
+      if(e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+      if(e.target.closest('.modal.show .modal-card')) return;
+      const horizontalZone = e.target.closest('.topbar,.live-wrap,.navlinks,.live-feed');
+      if(!horizontalZone || document.body.classList.contains('nav-open')) return;
+      const scroller = document.scrollingElement || document.documentElement;
+      const max = scroller.scrollHeight - window.innerHeight;
+      if(max > 4) scroller.scrollTop += e.deltaY;
+    }, {passive:true, capture:true});
   }
 
   function initIOSViewport(){
