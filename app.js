@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.0.0';
+  const VERSION = '31.1.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -15,9 +15,10 @@
     'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/'
   ];
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
+  const ONLINE_CATALOG = /[?&]online=1/.test(location.search); // Lite by default: no huge API JSON downloads on GitHub Pages
   const RUB_PER_USD = 74;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v31-realistic';
+  const PRICE_VERSION = 'market-rub-v31-realistic-lite';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -373,11 +374,11 @@
       initV30MobileActionPatch();
       bindEvents();
       purgeOldCaches();
-      // v23: service worker отключён, чтобы телефон не держал старый JS/картинки.
+      // Service Worker отключён: версия в query-string обновляет CSS/JS без постоянной чистки кэша.
       // registerServiceWorker();
       seedLive();
       renderLive();
-      setInterval(fakeLive, 4800);
+      setInterval(() => { if(!document.hidden) fakeLive(); }, 8500);
       routeLoading();
       try{ state = await promiseTimeout(loadStateAsync(), 900, loadState(false)); }
       catch(e){ console.warn('save load fallback', e); state = loadState(false); }
@@ -396,15 +397,17 @@
       renderLive();
       route();
 
-      promiseTimeout(loadCatalog(), 6500, null).then(online => {
-        if(online && online.cases && online.cases.length){
-          catalog = online;
-          updateHeroShowcase();
-          seedLive(true);
-          renderLive();
-          route();
-        }
-      }).catch(e => console.warn('background catalog failed', e));
+      if(ONLINE_CATALOG){
+        promiseTimeout(loadCatalog(), 6500, null).then(online => {
+          if(online && online.cases && online.cases.length){
+            catalog = online;
+            updateHeroShowcase();
+            seedLive(true);
+            renderLive();
+            route();
+          }
+        }).catch(e => console.warn('background catalog failed', e));
+      }
     }catch(err){
       console.error('Boot failed, emergency mode:', err);
       try{ addToasts(); }catch(e){}
@@ -423,12 +426,18 @@
   function routeLoading(){ const r = $('[data-route-root]'); if(r) r.innerHTML = '<div class="empty">Загружаю данные...</div>'; }
 
   function purgeOldCaches(){
-    if('caches' in window){
-      caches.keys().then(keys => Promise.all(keys.filter(k => /cs2-case-lab/i.test(k)).map(k => caches.delete(k)))).catch(()=>{});
-    }
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
-    }
+    // One-time cleanup only. Постоянная очистка кэша на каждом открытии тормозила GitHub Pages/iOS.
+    try{
+      const key = 'cs2_case_lab_cache_clean_v31_1';
+      if(localStorage.getItem(key) === '1' && !/[?&]clear=/.test(location.search)) return;
+      localStorage.setItem(key, '1');
+      if('caches' in window){
+        caches.keys().then(keys => Promise.all(keys.filter(k => /cs2-case-lab/i.test(k)).map(k => caches.delete(k)))).catch(()=>{});
+      }
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
+      }
+    }catch(e){}
   }
 
   async function loadJSON(url, timeoutMs=6500){
@@ -885,10 +894,10 @@
     if(live.length && !force) return;
     live = [];
     const items = catalog.items && catalog.items.length ? catalog.items : fallbackItems;
-    for(let i=0;i<12;i++){ const it = sample(items); live.push({user:sample(bots), item:it, value:Math.round((it.value||100)*rnd(.75,1.45))}); }
+    for(let i=0;i<8;i++){ const it = sample(items); live.push({user:sample(bots), item:it, value:Math.round((it.value||100)*rnd(.75,1.45))}); }
   }
-  function fakeLive(){ const it = sample(catalog.items.length?catalog.items:fallbackItems); live.unshift({user:sample(bots),item:it,value:Math.round((it.value||100)*rnd(.8,1.5))}); live=live.slice(0,18); renderLive(); }
-  function addLive(user,item){ live.unshift({user,item,value:item.value||0}); live=live.slice(0,18); renderLive(); }
+  function fakeLive(){ const it = sample(catalog.items.length?catalog.items:fallbackItems); live.unshift({user:sample(bots),item:it,value:Math.round((it.value||100)*rnd(.8,1.5))}); live=live.slice(0,10); renderLive(); }
+  function addLive(user,item){ live.unshift({user,item,value:item.value||0}); live=live.slice(0,10); renderLive(); }
   function renderLive(){
     const root = $('#liveFeed'); if(!root) return;
     root.innerHTML = live.map(x => `<div class="live-card" style="--rar:${x.item.rarityColor||'#60a5fa'}"><img src="${esc(imgSrc(x.item.image, svgSkin('CS2 Skin')))}" onerror="this.src='${svgSkin('CS2 Skin')}'" loading="lazy" referrerpolicy="no-referrer"><div><b>${esc(x.user)} выбил</b><small>${esc(x.item.name)} · ${fmt(x.value)}</small></div></div>`).join('');
