@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cs2-case-lab-v8-no-cache';
+const CACHE_NAME = 'cs2-case-lab-v9-no-cache';
 self.addEventListener('install', event => {
   self.skipWaiting();
 });

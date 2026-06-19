@@ -1,10 +1,10 @@
 (function(){
   'use strict';
 
-  const VERSION = '8.0.0';
-  const LS_KEY = 'cs2_case_lab_state';
-  const BACKUP_KEY = 'cs2_case_lab_state_backup';
-  const LEGACY_KEYS = ['cs2_case_lab_v7_state','cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state','cs2_case_lab_v3_state','cs2_case_lab_v2_state','cs2_case_lab_state_backup'];
+  const VERSION = '9.0.0';
+  const LS_KEY = 'cs2_case_lab_save';
+  const BACKUP_KEY = 'cs2_case_lab_session_backup';
+  const LEGACY_KEYS = ['cs2_case_lab_state','cs2_case_lab_state_backup','cs2_case_lab_v8_state','cs2_case_lab_v7_state','cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state','cs2_case_lab_v3_state','cs2_case_lab_v2_state'];
   const API_BASE = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/';
   const API_CRATES = API_BASE + 'crates.json';
   const API_STICKERS = API_BASE + 'stickers.json';
@@ -69,6 +69,8 @@
     {id:'knife',name:'Knife & Gloves Case',price:3200,image:svgCase('GOLD'),items:fallbackItems.filter(i => ['Covert','Exceedingly Rare','Extraordinary'].includes(i.rarity)),source:'offline-fallback'}
   ];
   let catalog = {items:fallbackItems, cases:fallbackCases, source:'fallback'};
+  let storageWarned = false;
+  cleanupStorageBeforeLoad();
   let state = loadState();
   let busy = {case:false,wheel:false,battle:false,ad:false,upgrade:false};
   let live = [];
@@ -96,7 +98,7 @@
     return Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:it.image||svgSkin(it.name||'Skin')});
   }
   function allSaveKeys(){
-    const keys = new Set([LS_KEY, BACKUP_KEY, ...LEGACY_KEYS]);
+    const keys = new Set([LS_KEY, ...LEGACY_KEYS]);
     try{
       for(let i=0;i<localStorage.length;i++){
         const k = localStorage.key(i);
@@ -105,49 +107,81 @@
     }catch(e){}
     return Array.from(keys);
   }
-  function loadState(){
-    const candidates = [];
+  function compactInvItem(it){
+    if(!it) return null;
+    const r = it.rarity || 'Mil-Spec Grade';
+    return {
+      uid: it.uid || id(), id: it.id || it.baseId || slug(it.name || it.displayName || 'item'), baseId: it.baseId || it.id || slug(it.name || it.displayName || 'item'),
+      name: it.name || it.displayName || 'CS2 Item', displayName: it.displayName || it.name || 'CS2 Item',
+      rarity: r, rarityColor: it.rarityColor || rarityColors[r] || '#60a5fa', category: it.category || 'skin',
+      value: Math.max(1, Math.round(toNum(it.value, 100))), steamUsd: it.steamUsd || undefined, marketHashName: it.marketHashName || it.market_hash_name || it.name,
+      image: it.image || svgSkin(it.name || it.displayName || 'CS2 Item'), wear: it.wear || '', float: it.float || '', source: it.source || '', addedAt: Math.max(0, Math.round(toNum(it.addedAt, Date.now())))
+    };
+  }
+  function compactState(raw){
+    const s = normalizeState(raw);
+    return {
+      version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,500),
+      opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins,
+      tx:(s.tx||[]).slice(0,50).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
+      pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{},
+      createdAt:s.createdAt||Date.now(), savedAt:Date.now()
+    };
+  }
+  function cleanupStorageBeforeLoad(){
     try{
-      for(const key of allSaveKeys()){
-        const raw = localStorage.getItem(key);
-        if(!raw) continue;
-        try{
-          const parsed = normalizeState(JSON.parse(raw));
-          parsed._key = key;
-          candidates.push(parsed);
-        }catch(e){}
+      const keepRaw = localStorage.getItem(LS_KEY);
+      const legacyRaw = !keepRaw ? LEGACY_KEYS.map(k => { try{return localStorage.getItem(k)}catch(e){return null} }).find(Boolean) : null;
+      for(let i=localStorage.length-1;i>=0;i--){
+        const k = localStorage.key(i);
+        if(k && /cs2_case_lab/i.test(k) && k !== LS_KEY) localStorage.removeItem(k);
       }
-      if(candidates.length){
-        candidates.sort((a,b)=>{
-          const sa = toNum(a.savedAt || a.createdAt,0), sb = toNum(b.savedAt || b.createdAt,0);
-          if(sa !== sb) return sb - sa;
-          const ia = Array.isArray(a.inventory) ? a.inventory.length : 0;
-          const ib = Array.isArray(b.inventory) ? b.inventory.length : 0;
-          if(ia !== ib) return ib - ia;
-          return toNum(b.balance,0) - toNum(a.balance,0);
-        });
-        const best = candidates[0];
-        best.version = VERSION;
-        delete best._key;
-        try{
-          localStorage.setItem(LS_KEY, JSON.stringify(best));
-          localStorage.setItem(BACKUP_KEY, JSON.stringify(best));
-        }catch(e){}
-        return best;
+      if(!keepRaw && legacyRaw){
+        try{ localStorage.setItem(LS_KEY, JSON.stringify(compactState(JSON.parse(legacyRaw)))); }catch(e){}
       }
     }catch(e){}
+  }
+  function loadState(){
+    const candidates = [];
+    try{ const raw = localStorage.getItem(LS_KEY); if(raw) candidates.push(normalizeState(JSON.parse(raw))); }catch(e){}
+    try{ const raw = sessionStorage.getItem(BACKUP_KEY); if(raw) candidates.push(normalizeState(JSON.parse(raw))); }catch(e){}
+    if(candidates.length){
+      candidates.sort((a,b)=>{
+        const sa = toNum(a.savedAt || a.createdAt,0), sb = toNum(b.savedAt || b.createdAt,0);
+        if(sa !== sb) return sb - sa;
+        const ia = Array.isArray(a.inventory) ? a.inventory.length : 0;
+        const ib = Array.isArray(b.inventory) ? b.inventory.length : 0;
+        if(ia !== ib) return ib - ia;
+        return toNum(b.balance,0) - toNum(a.balance,0);
+      });
+      return candidates[0];
+    }
     return defaultState();
   }
   function save(){
-    state = normalizeState(state);
-    state.version = VERSION;
-    state.savedAt = Date.now();
+    state = compactState(state);
+    const raw = JSON.stringify(state);
+    let okLocal = false, okSession = false;
+    try{ sessionStorage.setItem(BACKUP_KEY, raw); okSession = true; }catch(e){}
     try{
-      const raw = JSON.stringify(state);
+      cleanupStorageBeforeLoad();
       localStorage.setItem(LS_KEY, raw);
-      localStorage.setItem(BACKUP_KEY, raw);
-    }catch(e){ console.warn('localStorage недоступен', e); toast('Браузер не дал сохранить прогресс. Проверь private mode / запрет cookies.', 'bad'); }
+      okLocal = true;
+    }catch(e){
+      try{
+        for(let i=localStorage.length-1;i>=0;i--){ const k = localStorage.key(i); if(k && /cs2_case_lab/i.test(k) && k !== LS_KEY) localStorage.removeItem(k); }
+        localStorage.setItem(LS_KEY, raw);
+        okLocal = true;
+      }catch(err){
+        console.warn('localStorage недоступен', err);
+      }
+    }
+    if(!okLocal && !storageWarned){
+      storageWarned = true;
+      toast(okSession ? 'Прогресс временно сохранён в этой вкладке. Для постоянного save разреши localStorage/cookies.' : 'Браузер не дал сохранить прогресс. Проверь private mode / запрет cookies.', 'bad');
+    }
     renderGlobals();
+    return okLocal || okSession;
   }
   function addTx(text, amount){ state.tx.unshift({id:id(), text, amount:Math.round(amount), time:Date.now()}); state.tx = state.tx.slice(0,60); }
   function earn(amount, reason='Начисление'){
@@ -173,7 +207,7 @@
     const w = sample(wears);
     const stattrak = Math.random() < 0.07 && !String(base.name).startsWith('★');
     const value = Math.max(1, Math.round(toNum(base.value,100) * w[1] * (stattrak?1.5:1) * rnd(.88,1.16)));
-    const item = Object.assign({}, base, {uid:id(), baseId:base.id, displayName:(stattrak?'StatTrak™ ':'') + base.name, wear:w[0], float:rnd(w[2],w[3]).toFixed(5), value, source, addedAt:Date.now()});
+    const item = compactInvItem(Object.assign({}, base, {uid:id(), baseId:base.id, displayName:(stattrak?'StatTrak™ ':'') + base.name, wear:w[0], float:rnd(w[2],w[3]).toFixed(5), value, source, addedAt:Date.now()}));
     state.inventory.unshift(item);
     state.inventory = state.inventory.slice(0,600);
     save();
@@ -203,6 +237,7 @@
     window.addEventListener('pagehide', () => { try{ save(); }catch(e){} });
     window.addEventListener('storage', e => { if(e.key === LS_KEY || e.key === BACKUP_KEY){ state = loadState(); renderGlobals(); } });
     renderGlobals();
+    save();
     bindEvents();
     seedLive();
     renderLive();
@@ -541,9 +576,39 @@
     const buttons = opts.buttons ? `<div class="item-actions">${opts.buttons}</div>` : '';
     return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}"></div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
   }
+  function themeColor(c){
+    const key = `${c.id||''} ${c.name||''}`.toLowerCase();
+    if(/green|high grade|charm|keychain/.test(key)) return '#22c55e';
+    if(/red|covert/.test(key)) return '#ef4444';
+    if(/pink|classified/.test(key)) return '#ec4899';
+    if(/purple|restricted/.test(key)) return '#8b5cf6';
+    if(/blue|mil-spec/.test(key)) return '#4b69ff';
+    if(/industrial|light blue/.test(key)) return '#5e98d9';
+    if(/grey|consumer/.test(key)) return '#b0c3d9';
+    if(/knife|glove|rare/.test(key)) return '#ffd166';
+    if(/sticker|capsule|tournament|copenhagen|shanghai|austin|paris/.test(key)) return '#facc15';
+    if(/agent/.test(key)) return '#f97316';
+    if(/patch/.test(key)) return '#94a3b8';
+    return '#ff7a18';
+  }
+  function coverItems(c){
+    const pool = (c && c.items ? c.items : []).filter(x=>x && x.image);
+    const expensive = [...pool].sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,8);
+    const byRarity = [...pool].sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0)).slice(0,8);
+    const merged = [];
+    [...expensive, ...byRarity, ...pool].forEach(x => { if(merged.length < 5 && !merged.some(m=>m.id===x.id)) merged.push(x); });
+    return merged.slice(0,5);
+  }
+  function caseVisual(c, big=false){
+    const color = themeColor(c);
+    const covers = coverItems(c);
+    const classes = big ? 'case-visual big' : 'case-visual';
+    const coverHtml = covers.length ? `<div class="case-cover-items">${covers.map((x,i)=>`<img class="cover-${i}" src="${esc(x.image)}" onerror="this.remove()" alt="${esc(x.name)}">`).join('')}</div>` : '';
+    return `<div class="${classes}" style="--theme:${color}"><img class="case-img ${big?'big':''}" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}">${coverHtml}<span class="case-sheen"></span></div>`;
+  }
   function caseCard(c){
     const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
-    return `<article class="case-card"><span class="case-kind">${esc(kindLabel)}</span><img class="case-img" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}"><h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
+    return `<article class="case-card" style="--theme:${themeColor(c)}"><span class="case-kind">${esc(kindLabel)}</span>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
   }
   function renderHome(){
     const root = $('#homeRoot'); if(!root) return;
@@ -569,7 +634,7 @@
     currentCase = c.id;
     $('#caseModalTitle').textContent = c.name;
     const content = [...c.items].sort((a,b)=>(rarityValue[a.rarity]||0)-(rarityValue[b.rarity]||0)).map(x=>caseContentCard(x)).join('');
-    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside"><img class="case-img big" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'"><div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть за ${fmt(c.price)}</button><button class="btn" data-action="add-debug-coins">+10 000 LC для теста</button><p class="small">Стрелка по центру показывает предмет, который выпадет после остановки.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
+    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside">${caseVisual(c,true)}<div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть за ${fmt(c.price)}</button><button class="btn" data-action="add-debug-coins">+10 000 LC для теста</button><p class="small">Стрелка по центру показывает предмет, который выпадет после остановки.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
     openModal('#caseModal');
     if(autoSpin) setTimeout(() => spinCase(c.id), 120);
   }
@@ -896,7 +961,7 @@
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $$('.js-install-ready').forEach(x=>x.textContent='Готово к установке'); });
   }
   function registerServiceWorker(){
-    // V8 intentionally unregisters old service workers: previous builds cached stale JS/HTML and broke balance/inventory.
+    // V9 intentionally unregisters old service workers: previous builds cached stale JS/HTML and broke balance/inventory.
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
     }
@@ -923,19 +988,29 @@
     root.innerHTML = `<div class="grid cards-3"><article class="panel"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel"><span class="kicker">iPhone / iPad</span><h2>Иконка на главный экран</h2><p>Для iOS установка идёт через Safari, без exe и без App Store.</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button></article><article class="panel"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block"><b>Важно:</b> реальный лимит «10 реклам на IP» невозможен в чистом GitHub Pages без бэкенда. В этой версии лимит реализован для браузера/устройства через localStorage; для IP-лимита нужен сервер или Cloudflare Worker.</div>`;
   }
 
+  function storageStatusText(){
+    try{
+      const test = '__cs2_case_lab_test__'; localStorage.setItem(test,'1'); localStorage.removeItem(test);
+      const raw = localStorage.getItem(LS_KEY) || '';
+      return `<span class="plus">localStorage работает</span><br><small>Размер save: ${Math.round(raw.length/1024)} KB · ключ: ${LS_KEY}</small>`;
+    }catch(e){
+      return `<span class="minus">localStorage заблокирован</span><br><small>Прогресс будет держаться только в этой вкладке через sessionStorage.</small>`;
+    }
+  }
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 LC. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
     if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 LC?')) return;
-    try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); }catch(e){}
+    try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); localStorage.removeItem(LS_KEY); }catch(e){}
+    try{ sessionStorage.removeItem(BACKUP_KEY); }catch(e){}
     state = defaultState(); save(); toast('Прогресс сброшен','good'); route();
   }
-  function exportSave(){ const box=$('#saveBox'); if(box) box.value = btoa(unescape(encodeURIComponent(JSON.stringify(state)))); toast('Save выгружен в поле','good'); }
+  function exportSave(){ const box=$('#saveBox'); if(box) box.value = btoa(unescape(encodeURIComponent(JSON.stringify(compactState(state))))); toast('Save выгружен в поле','good'); }
   function importSave(){
     const box=$('#saveBox'); if(!box || !box.value.trim()) return toast('Вставь save в поле','bad');
-    try{ state = normalizeState(JSON.parse(decodeURIComponent(escape(atob(box.value.trim()))))); save(); toast('Save импортирован','good'); route(); }
+    try{ state = compactState(JSON.parse(decodeURIComponent(escape(atob(box.value.trim()))))); save(); toast('Save импортирован','good'); route(); }
     catch(e){ toast('Не удалось импортировать save','bad'); }
   }
 
