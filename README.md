@@ -63,3 +63,8 @@
 - Protected items filtered out from upgrade, contracts and mines.
 - Prestige system after account level 100.
 - Extra promo codes in app.js via V315_PROMOS.
+
+
+## v31.16
+- Added TENMILLION promo code for 10,000,000 ₽.
+- Added Upgrade modes 75% and 67% with automatic target selection.

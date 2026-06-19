@@ -87,7 +87,7 @@
     GUNGNIRDREAM: 18000, KATOWICE14: 14000, PATCHDROP: 2500, STICKERHUNT: 5000, AGENTMODE: 4500, DAILY2026: 2600,
     XPSTART: 3500, MARKETKING: 6200, INVESTPLUS: 7200, RAREEVENT: 8800, SEASONCOIN: 5400, CREATORLAB: 7600, PROFILEUP: 4300, MINESSAFE: 5200,
     CRAZYBATTLE: 9300, UNDERDOG: 6400, GOLDENTICKET: 11000, DAILYMISSION: 3900, COLLECTIONRUN: 5800, TRADETAX: 4700, LIGHTTHEME: 2200, DARKTHEME: 2200,
-    CASEMAKER: 8300, SHOPPINGDAY: 5100, XPBOOSTER: 6900, TOKENHUNT: 6100
+    CASEMAKER: 8300, SHOPPINGDAY: 5100, XPBOOSTER: 6900, TOKENHUNT: 6100, TENMILLION: 10000000
   });
 
   const PROMO_REWARDS = Object.freeze({
@@ -322,8 +322,7 @@
     s.currency = String(s.currency || 'RUB').toUpperCase();
     if(!CURRENCY_OPTIONS[s.currency]) s.currency = 'RUB';
     ['opened','earned','spent','sold','upgrades','contracts','battles','wins','mines','minesWins'].forEach(k => s[k] = Math.max(0, Math.round(toNum(s[k],0))));
-    s.upgradeMode = clamp(Math.round(toNum(s.upgradeMode,2)),2,10);
-    if(![2,3,5,10].includes(s.upgradeMode)) s.upgradeMode = 2;
+    s.upgradeMode = normalizeUpgradeMode(s.upgradeMode);
     s.minesGame = normalizeMinesGame(s.minesGame);
     s.inventory = Array.isArray(s.inventory) ? s.inventory.filter(Boolean).map(normalizeInvItem).filter(Boolean) : [];
     s.tx = Array.isArray(s.tx) ? s.tx.slice(0,60) : [];
@@ -1139,7 +1138,7 @@
       if(a === 'start-battle') return startBattle();
       if(a === 'make-contract') return makeContract();
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return; }
-      if(a === 'set-upgrade-mult'){ state.upgradeMode = clamp(Math.round(toNum(btn.dataset.mult,2)),2,10); if(![2,3,5,10].includes(state.upgradeMode)) state.upgradeMode=2; save(); renderUpgrade(); return; }
+      if(a === 'set-upgrade-mult'){ state.upgradeMode = normalizeUpgradeMode(btn.dataset.mult); save(); renderUpgrade(); return; }
       if(a === 'do-upgrade') return doUpgrade();
       if(a === 'start-mines') return startMines();
       if(a === 'mines-cell') return revealMinesCell(btn.dataset.cell);
@@ -1638,9 +1637,21 @@
     const src = selectedUpgradeSource();
     return Math.max(0, Math.round((src ? toNum(src.value,0) : 0) + upgradeBalanceAmount()));
   }
+  function normalizeUpgradeMode(value){
+    const m = Math.round(toNum(value,2));
+    return [2,3,5,10,67,75].includes(m) ? m : 2;
+  }
   function upgradeTargetMultiplier(){
-    const m = clamp(Math.round(toNum(state.upgradeMode || upgradeMode || 2,2)),2,10);
-    return [2,3,5,10].includes(m) ? m : 2;
+    return normalizeUpgradeMode(state.upgradeMode || upgradeMode || 2);
+  }
+  function upgradeTargetValue(input, mode=upgradeTargetMultiplier()){
+    const v = Math.max(1, toNum(input,0));
+    if(mode === 75) return Math.round(v * 1.25);
+    if(mode === 67) return Math.round(v * 1.40);
+    return Math.round(v * mode);
+  }
+  function upgradeModeText(mode=upgradeTargetMultiplier()){
+    return mode === 75 || mode === 67 ? `${mode}%` : `${mode}x`;
   }
   function pickItemForValue(targetValue, q=''){
     q = String(q||'').toLowerCase();
@@ -1659,14 +1670,14 @@
     const sourceValue = selected ? selected.uid : '__BALANCE__';
     const balanceDefault = selected ? 0 : Math.min(Math.round(toNum(state.balance,0)), 1000);
     const options = `<option value="__BALANCE__" ${!selected?'selected':''}>Баланс без скина</option>` + inv.map(x=>`<option value="${esc(x.uid)}" ${sourceValue===x.uid?'selected':''}>${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
-    root.innerHTML = `<div class="upgrade-layout upgrade-layout-pro"><aside class="panel upgrade-sidebar"><span class="kicker">Upgrade 2.0</span><h3>Ставка</h3><label class="field-label">Источник</label><select id="upgradeSource">${options}</select><div id="upgradeSourcePreview">${selected?itemCard(selected):'<div class="empty">Можно апгрейдить только балансом — без скина.</div>'}</div><label class="field-label">Добавить с баланса</label><input id="upgradeBalanceAmount" type="number" min="0" step="50" value="${balanceDefault}" placeholder="Сумма доплаты"><div class="upgrade-tabs" role="tablist"><button class="small-btn ${upgradeMode===2?'active':''}" data-action="set-upgrade-mult" data-mult="2">2x</button><button class="small-btn ${upgradeMode===3?'active':''}" data-action="set-upgrade-mult" data-mult="3">3x</button><button class="small-btn ${upgradeMode===5?'active':''}" data-action="set-upgrade-mult" data-mult="5">5x</button><button class="small-btn ${upgradeMode===10?'active':''}" data-action="set-upgrade-mult" data-mult="10">10x</button></div><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade">Апгрейд</button><p class="small">При проигрыше сгорает выбранный скин и/или списанная сумма. При победе выдаётся автоматически подобранная вещь из подходящего ценового диапазона.</p></aside><section><div class="upgrade-roulette" id="upgradeRoulette"><div class="upgrade-arrow"></div><div class="upgrade-lane" id="upgradeLane"><span class="zone lose">LOSE</span><span class="zone win">WIN</span><span class="zone lose">LOSE</span></div></div><div class="notice"><b>Автоподбор:</b> выбери 2x / 3x / 5x / 10x — список ниже сам подберёт цели примерно под сумму ставки × множитель.</div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
+    root.innerHTML = `<div class="upgrade-layout upgrade-layout-pro"><aside class="panel upgrade-sidebar"><span class="kicker">Upgrade 2.0</span><h3>Ставка</h3><label class="field-label">Источник</label><select id="upgradeSource">${options}</select><div id="upgradeSourcePreview">${selected?itemCard(selected):'<div class="empty">Можно апгрейдить только балансом — без скина.</div>'}</div><label class="field-label">Добавить с баланса</label><input id="upgradeBalanceAmount" type="number" min="0" step="50" value="${balanceDefault}" placeholder="Сумма доплаты"><div class="upgrade-tabs" role="tablist"><button class="small-btn ${upgradeMode===75?'active':''}" data-action="set-upgrade-mult" data-mult="75">75%</button><button class="small-btn ${upgradeMode===67?'active':''}" data-action="set-upgrade-mult" data-mult="67">67%</button><button class="small-btn ${upgradeMode===2?'active':''}" data-action="set-upgrade-mult" data-mult="2">2x</button><button class="small-btn ${upgradeMode===3?'active':''}" data-action="set-upgrade-mult" data-mult="3">3x</button><button class="small-btn ${upgradeMode===5?'active':''}" data-action="set-upgrade-mult" data-mult="5">5x</button><button class="small-btn ${upgradeMode===10?'active':''}" data-action="set-upgrade-mult" data-mult="10">10x</button></div><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade">Апгрейд</button><p class="small">При проигрыше сгорает выбранный скин и/или списанная сумма. При победе выдаётся автоматически подобранная вещь из подходящего ценового диапазона.</p></aside><section><div class="upgrade-roulette" id="upgradeRoulette"><div class="upgrade-arrow"></div><div class="upgrade-lane" id="upgradeLane"><span class="zone lose">LOSE</span><span class="zone win">WIN</span><span class="zone lose">LOSE</span></div></div><div class="notice"><b>Автоподбор:</b> выбери 75% / 67% или 2x / 3x / 5x / 10x — список ниже сам подберёт цель под выбранный риск.</div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
     renderUpgradeTargets();
   }
   function renderUpgradeTargets(){
     const q = ($('#targetSearch') && $('#targetSearch').value || '').toLowerCase();
     const input = upgradeInputValue();
     const mult = upgradeTargetMultiplier();
-    const targetValue = Math.max(1, input * mult);
+    const targetValue = upgradeTargetValue(input, mult);
     let pool = catalog.items.filter(x => x && toNum(x.value,0) >= Math.max(1,targetValue*.72) && toNum(x.value,0) <= targetValue*1.55);
     if(q) pool = pool.filter(x => String(x.name||'').toLowerCase().includes(q));
     if(pool.length < 8){
@@ -1687,6 +1698,9 @@
   function chance(srcOrValue,tgt){
     const input = typeof srcOrValue === 'number' ? srcOrValue : (srcOrValue ? toNum(srcOrValue.value,0) : upgradeInputValue());
     if(!input || !tgt) return 0;
+    const mode = upgradeTargetMultiplier();
+    if(mode === 75) return 75;
+    if(mode === 67) return 67;
     const ratio = input / Math.max(1, toNum(tgt.value,1));
     return clamp(ratio * 67, 0.35, 58);
   }
@@ -1696,7 +1710,7 @@
     const add = upgradeBalanceAmount();
     const ch = chance(input,currentTarget);
     const el = $('#upgradeChance');
-    if(el) el.innerHTML = input && currentTarget ? `<div class="upgrade-summary"><p>Ставка: <b>${fmt(input)}</b> ${src?`<span>скин ${fmt(src.value)}</span>`:''} ${add?`<span>+ баланс ${fmt(add)}</span>`:''}</p><p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p></div><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '<p class="small">Укажи сумму или выбери скин, чтобы увидеть шанс.</p>';
+    if(el) el.innerHTML = input && currentTarget ? `<div class="upgrade-summary"><p>Ставка: <b>${fmt(input)}</b> ${src?`<span>скин ${fmt(src.value)}</span>`:''} ${add?`<span>+ баланс ${fmt(add)}</span>`:''}</p><p>Режим: <b>${upgradeModeText()}</b></p><p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p></div><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '<p class="small">Укажи сумму или выбери скин, чтобы увидеть шанс.</p>';
     const win = $('#upgradeLane .win'); if(win) win.style.width = `${clamp(ch,4,76)}%`;
   }
   function doUpgrade(){
@@ -2196,7 +2210,7 @@
       if(a === 'start-battle'){ startBattle(); return true; }
       if(a === 'make-contract'){ makeContract(); return true; }
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return true; }
-      if(a === 'set-upgrade-mult'){ state.upgradeMode = clamp(Math.round(toNum(el.dataset.mult,2)),2,10); if(![2,3,5,10].includes(state.upgradeMode)) state.upgradeMode=2; save(); renderUpgrade(); return true; }
+      if(a === 'set-upgrade-mult'){ state.upgradeMode = normalizeUpgradeMode(el.dataset.mult); save(); renderUpgrade(); return true; }
       if(a === 'do-upgrade'){ doUpgrade(); return true; }
       if(a === 'start-mines'){ startMines(); return true; }
       if(a === 'mines-cell'){ revealMinesCell(el.dataset.cell); return true; }
