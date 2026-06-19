@@ -3,60 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CS2 Case Lab — Реклама</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Реклама</title>
 </head>
-<body>
+<body data-page="ads.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
-    <section class="hero">
-      <div class="hero-copy panel">
-        <span class="eyebrow">reward ads</span>
-        <h1>Монеты за просмотр рекламы твоих проектов.</h1>
-        <p>На GitHub Pages нельзя просто “подключить прибыльную рекламу” без внешней рекламной сети и модерации, поэтому здесь реализован свой рекламный экран: 10 секунд показывается один из твоих проектов, потом начисляются LabCoins.</p>
-        <div class="row-actions">
-          <input id="adReward" class="input" style="max-width:180px" type="number" min="50" value="350" />
-          <button id="watchAdBtn" class="primary">Смотреть рекламу</button>
-        </div>
-      </div>
-      <aside class="panel" style="padding:24px">
-        <span class="eyebrow">stats</span>
-        <h2>Реклама</h2>
-        <div class="stats-grid">
-          <div class="stat-card"><b id="adsWatched">0</b><span>просмотров</span></div>
-          <div class="stat-card"><b>◆ <span id="adsEarned">0</span></b><span>примерно получено</span></div>
-          <div class="stat-card"><b>10с</b><span>длительность</span></div>
-        </div>
-        <p style="margin-top:16px">Замени ссылки проектов в массиве <b>projects</b> внутри `app.js`.</p>
-      </aside>
-    </section>
-
-    <section>
-      <div class="section-head"><div><span class="eyebrow">ad slots</span><h2>Проекты в рекламной ротации</h2></div></div>
-      <div id="adProjects" class="grid project-grid"></div>
-    </section>
+    <div class="section-head"><div><span class="eyebrow">ads reward</span><h2>Реклама твоих проектов</h2><p>Фейковый рекламный просмотр на 10 секунд. После таймера начисляются LabCoins.</p></div><button id="watchAdBtn" class="primary">Смотреть рекламу</button></div>
+    <div class="stats-grid"><div class="stat-card"><b id="adsWatched">0</b><span>просмотров</span></div><div class="stat-card"><b>◆ <span id="adsEarned">0</span></b><span>заработано</span></div><div class="stat-card"><b>10 сек</b><span>таймер</span></div></div>
+    <section><div class="section-head"><div><span class="eyebrow">creative pool</span><h2>Баннеры проектов</h2></div></div><div id="adProjects" class="grid project-grid"></div></section>
   </main>
-
-  <div id="adOverlay" class="ad-overlay hidden" role="dialog" aria-modal="true">
+  <div id="adOverlay" class="ad-overlay hidden">
     <div class="ad-box">
-      <div class="ad-timer" id="adTimer">10</div>
-      <div class="ad-creative">
-        <span class="eyebrow" id="adBadge">WEB</span>
-        <h2 id="adTitle">Проект</h2>
-        <p id="adText">Описание проекта</p>
-        <a id="adLink" class="ghost" href="#" target="_blank" rel="noopener">Открыть проект</a>
-      </div>
-      <div class="row-actions" style="justify-content:center">
-        <button id="adRewardBtn" class="primary" disabled>Подожди...</button>
-        <button id="adCloseBtn" class="ghost">Закрыть без награды</button>
-      </div>
+      <button id="adCloseBtn" class="modal-close" aria-label="Закрыть">×</button>
+      <div id="adTimer" class="ad-timer">10</div>
+      <div class="ad-creative"><span id="adBadge" class="ad-badge">WEB</span><h2 id="adTitle">Проект</h2><p id="adText">Описание проекта</p><a id="adLink" class="ghost" href="#" target="_blank" rel="noopener">Открыть проект</a></div>
+      <button id="adRewardBtn" class="primary" disabled>Подожди...</button>
     </div>
   </div>
+  <footer>Ссылки проектов меняются в массиве `projects` в data.js.</footer>
 
-  <footer>Это встроенная рекламная механика для твоих проектов, не внешняя рекламная сеть.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

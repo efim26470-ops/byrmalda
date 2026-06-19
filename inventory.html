@@ -3,52 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CS2 Case Lab — Инвентарь</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Инвентарь</title>
 </head>
-<body>
+<body data-page="inventory.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
     <div class="section-head">
-      <div><span class="eyebrow">inventory</span><h2>Инвентарь</h2><p>Здесь теперь рабочие карточки: продажа, отправка в апгрейд и добавление в контракт. Данные сохраняются в localStorage.</p></div>
+      <div><span class="eyebrow">inventory</span><h2>Инвентарь</h2><p>Продажа начисляет LabCoins, предмет можно отправить в апгрейд или контракт.</p></div>
       <button id="sellAllBtn" class="ghost">Продать всё</button>
     </div>
-
-    <div class="stats-grid" style="margin-bottom:18px">
+    <div class="stats-grid">
       <div class="stat-card"><b id="inventoryCount">0</b><span>предметов</span></div>
       <div class="stat-card"><b>◆ <span id="inventoryValue">0</span></b><span>общая стоимость</span></div>
-      <div class="stat-card"><b id="bestDrop">—</b><span>лучший дроп</span></div>
+      <div class="stat-card"><b id="inventoryBest">—</b><span>лучший дроп</span></div>
     </div>
-
     <div class="filters">
-      <input class="input" id="inventorySearch" placeholder="Поиск по названию: AK, AWP, Knife..." />
-      <select id="rarityFilter">
-        <option value="all">Все редкости</option>
-        <option value="consumer">Common</option>
-        <option value="industrial">Industrial</option>
-        <option value="milspec">Mil-Spec</option>
-        <option value="restricted">Restricted</option>
-        <option value="classified">Classified</option>
-        <option value="covert">Covert</option>
-        <option value="special">Special</option>
-        <option value="contraband">Contraband</option>
-      </select>
-      <select id="sortInventory">
-        <option value="new">Сначала новые</option>
-        <option value="valueDesc">Дороже сверху</option>
-        <option value="valueAsc">Дешевле сверху</option>
-        <option value="rarity">По редкости</option>
-      </select>
+      <input id="inventorySearch" class="input" placeholder="Поиск: AK, AWP, Knife..." />
+      <select id="rarityFilter"><option value="all">Все редкости</option></select>
+      <select id="sortInventory"><option value="new">Сначала новые</option><option value="valueDesc">Дороже сверху</option><option value="valueAsc">Дешевле сверху</option><option value="rarity">По редкости</option></select>
       <a class="primary" href="cases.html">Открыть ещё</a>
     </div>
-
     <div id="inventoryGrid" class="grid item-grid"></div>
   </main>
+  <footer>Данные инвентаря сохраняются в localStorage конкретного браузера.</footer>
 
-  <footer>Инвентарь не синхронизируется между устройствами, потому что проект работает без сервера.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

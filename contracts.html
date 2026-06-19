@@ -3,35 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CS2 Case Lab — Контракты</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Контракты</title>
 </head>
-<body>
+<body data-page="contracts.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
-    <div class="section-head">
-      <div><span class="eyebrow">contracts</span><h2>Контракты</h2><p>Добавь от 3 до 10 предметов, чтобы обменять их на один новый предмет из близкого ценового диапазона.</p></div>
-      <button id="clearContractBtn" class="ghost">Очистить выбор</button>
-    </div>
-
+    <div class="section-head"><div><span class="eyebrow">contracts</span><h2>Контракты</h2><p>Добавь от 3 до 10 предметов, чтобы обменять их на один новый предмет.</p></div><button id="clearContractBtn" class="ghost">Очистить</button></div>
     <section class="contract-layout">
-      <div class="panel" style="padding:18px">
-        <div id="contractInventory" class="contract-list"></div>
-      </div>
-      <aside class="panel" style="padding:22px">
+      <div id="contractInventory" class="contract-list"></div>
+      <aside class="panel soft sticky-card">
         <span class="eyebrow">selected</span>
         <h2><span id="contractCount">0/10</span></h2>
-        <p>Сумма выбранных предметов: <b style="color:var(--gold)">◆ <span id="contractValue">0</span></b></p>
+        <p>Сумма: ◆ <b id="contractValue">0</b></p>
         <div id="contractPreview"></div>
-        <button id="contractBtn" class="primary" style="width:100%;margin-top:14px">Создать контракт</button>
+        <button id="contractBtn" class="primary">Запустить контракт</button>
       </aside>
     </section>
   </main>
+  <footer>Контракт потребляет выбранные предметы и создаёт новый локальный предмет.</footer>
 
-  <footer>Контракты — локальная игровая механика симулятора.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

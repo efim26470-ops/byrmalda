@@ -3,64 +3,47 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <meta name="description" content="CS2 Case Lab — многостраничный фан-симулятор открытия кейсов для GitHub Pages." />
-  <title>CS2 Case Lab — Главная</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Главная</title>
 </head>
-<body>
+<body data-page="index.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
-    <section class="hero">
-      <div class="hero-copy panel">
-        <span class="eyebrow">fan simulator • localStorage • GitHub Pages</span>
-        <h1>Кейсы, апгрейд, баттлы, колесо и рекламные бонусы.</h1>
-        <p>Проект работает без сервера: баланс, инвентарь, история дропов и статистика сохраняются в браузере. Реальных платежей, Steam-логина и вывода скинов здесь нет — это безопасный симулятор.</p>
+    <section class="hero panel">
+      <div class="hero-copy">
+        <span class="eyebrow">fan simulator • github pages</span>
+        <h1>CS2 Case Lab</h1>
+        <p>Многостраничный симулятор кейсов: открытие с рулеткой, живой фейк-фид, инвентарь, апгрейд, контракты, баттлы, бонус-колесо и просмотр рекламы твоих проектов за LabCoins.</p>
         <div class="hero-actions">
           <a class="primary" href="cases.html">Открыть кейс</a>
-          <a class="ghost" href="ads.html">Получить монеты за рекламу</a>
-          <a class="ghost" href="battle.html">Зайти в баттл</a>
+          <a class="ghost" href="ads.html">Получить монеты</a>
+          <a class="ghost" href="battle.html">Case Battle</a>
         </div>
       </div>
-      <aside class="hero-visual panel">
-        <div class="hero-case"><div class="case-sparks"></div><div class="case-3d"></div></div>
-        <div class="stats-grid">
-          <div class="stat-card"><b id="statOpened">0</b><span>кейсов открыто</span></div>
+      <div class="hero-visual">
+        <img class="hero-case-img" src="assets/cases/elite.png" alt="Elite case" />
+        <div class="stats-grid mini">
+          <div class="stat-card"><b id="statOpened">0</b><span>открытий</span></div>
           <div class="stat-card"><b id="statInventory">0</b><span>предметов</span></div>
-          <div class="stat-card"><b>◆ <span id="statValue">0</span></b><span>стоимость инвентаря</span></div>
+          <div class="stat-card"><b>◆ <span id="statValue">0</span></b><span>стоимость</span></div>
         </div>
-      </aside>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <div><span class="eyebrow">популярные кейсы</span><h2>Быстрый старт</h2><p>Несколько кейсов с разной ценой и пулом предметов. Полный список — на отдельной странице.</p></div>
-        <a class="ghost" href="cases.html">Все кейсы</a>
       </div>
+    </section>
+    <section>
+      <div class="section-head"><div><span class="eyebrow">popular cases</span><h2>Популярные кейсы</h2></div><a class="ghost" href="cases.html">Все кейсы</a></div>
       <div id="homeCases" class="grid case-grid"></div>
     </section>
-
-    <section class="hero" style="margin-top:22px">
-      <div class="panel" style="padding:24px">
-        <span class="eyebrow">последние твои дропы</span>
-        <h2>История</h2>
-        <div id="recentDrops" class="history-list"></div>
-      </div>
-      <div class="panel" style="padding:24px">
-        <span class="eyebrow">лучший предмет</span>
-        <h2 id="statBest">—</h2>
-        <p>Лучший дроп считается по локальной стоимости предмета в LabCoins. Все значения можно менять в `app.js`.</p>
-        <div class="row-actions">
-          <a class="primary" href="inventory.html">Инвентарь</a>
-          <a class="ghost" href="profile.html">Профиль и сброс</a>
-        </div>
-      </div>
+    <section class="two-col">
+      <div class="panel soft"><div class="section-head compact"><div><span class="eyebrow">recent</span><h2>Последние твои дропы</h2></div></div><div id="recentDrops" class="history-list"></div></div>
+      <div class="panel soft"><div class="section-head compact"><div><span class="eyebrow">best</span><h2>Лучший дроп</h2></div></div><div id="bestDropCard" class="best-drop-card"></div></div>
     </section>
   </main>
+  <footer>Фан-симулятор: нет реальных денег, Steam-логина, депозитов и вывода предметов.</footer>
 
-  <footer>CS2 Case Lab — фан-проект, не связан с Valve, Steam или Counter-Strike. Все предметы и валюта существуют только в локальном симуляторе.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

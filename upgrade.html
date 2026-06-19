@@ -3,38 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CS2 Case Lab — Апгрейд</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Апгрейд</title>
 </head>
-<body>
+<body data-page="upgrade.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
-    <section class="panel" style="padding:24px">
-      <span class="eyebrow">upgrader</span>
-      <h2>Апгрейд предмета</h2>
-      <p>Выбираешь предмет из инвентаря и цель. Шанс считается по соотношению стоимости: чем дороже цель, тем ниже шанс.</p>
-      <div class="upgrade-layout">
-        <label>Твой предмет<select id="upgradeOwn"></select></label>
-        <label>Цель апгрейда<select id="upgradeTargets"></select></label>
-        <div class="upgrade-preview" id="upgradePreview"></div>
-        <div class="chance-panel">
-          <span class="eyebrow">chance</span>
-          <div class="chance-number" id="upgradeChance">0%</div>
-          <div class="meter"><span id="upgradeMeter"></span></div>
-        </div>
-        <div class="chance-panel">
-          <span class="eyebrow">action</span>
-          <p>При неудаче исходный предмет сгорает. Это только локальная симуляция.</p>
-          <button id="upgradeBtn" class="primary">Запустить апгрейд</button>
-        </div>
+    <div class="section-head"><div><span class="eyebrow">upgrade</span><h2>Апгрейд предметов</h2><p>Выбираешь предмет из инвентаря и цель. При неудаче исходный предмет исчезает.</p></div></div>
+    <section class="panel soft upgrade-layout">
+      <div><label>Твой предмет</label><select id="upgradeOwn"></select></div>
+      <div><label>Цель апгрейда</label><select id="upgradeTarget"></select></div>
+      <div id="upgradePreview" class="upgrade-preview"></div>
+      <div class="chance-panel">
+        <span class="eyebrow">success chance</span>
+        <div id="upgradeChance" class="chance-number">0%</div>
+        <div class="meter"><span id="upgradeMeter"></span></div>
+        <button id="upgradeBtn" class="primary">Запустить апгрейд</button>
       </div>
     </section>
   </main>
+  <footer>Апгрейд — локальная риск-механика фан-симулятора.</footer>
 
-  <footer>Апгрейд работает без реальных денег и не связан с CS2/Steam.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

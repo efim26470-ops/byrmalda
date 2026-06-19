@@ -3,34 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CS2 Case Lab — Кейсы</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Кейсы</title>
 </head>
-<body>
+<body data-page="cases.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
     <div class="section-head">
-      <div><span class="eyebrow">case opening</span><h2>Открытие кейсов</h2><p>Выбери кейс, посмотри примерные шансы и пул, затем запусти рулетку. После выпадения появится окно с продажей, апгрейдом, контрактом и повторным открытием.</p></div>
+      <div><span class="eyebrow">case opening</span><h2>Открытие кейсов</h2><p>Баланс списывается сразу, предмет начисляется после остановки рулетки. После дропа открывается окно действий.</p></div>
       <a class="ghost" href="ads.html">Не хватает монет?</a>
     </div>
-
     <section class="opener-layout">
-      <aside class="side-list" id="caseSelectGrid"></aside>
+      <aside id="caseSelectGrid" class="side-list"></aside>
       <div class="panel opener">
         <div class="selected-case">
-          <div class="case-cover" id="selectedCaseCover" style="--caseGradient:linear-gradient(135deg,#6cf3ff,#3358ff)"><span>SL</span><i></i></div>
+          <img id="selectedCaseImage" class="selected-case-img" src="assets/cases/free.png" alt="case" />
           <div>
             <span class="eyebrow">selected case</span>
-            <h2 id="selectedCaseTitle">Starter Lab</h2>
+            <h2 id="selectedCaseTitle">Кейс</h2>
             <p id="selectedCaseDesc">Выбери кейс слева.</p>
-            <div class="odds" id="caseOdds"></div>
+            <div id="caseOdds" class="odds"></div>
           </div>
-          <div>
-            <b id="selectedCasePrice" style="color:var(--gold);font-size:24px">◆ 0</b>
-            <button id="openCaseBtn" class="primary" style="margin-top:10px;width:100%">Открыть</button>
+          <div class="open-side">
+            <b id="selectedCasePrice">◆ 0</b>
+            <button id="openCaseBtn" class="primary">Открыть</button>
           </div>
         </div>
         <div id="rouletteWindow" class="roulette-window">
@@ -39,19 +38,18 @@
         </div>
       </div>
     </section>
-
     <section>
-      <div class="section-head"><div><span class="eyebrow">loot pool</span><h2>Предметы в выбранном кейсе</h2></div></div>
+      <div class="section-head"><div><span class="eyebrow">loot pool</span><h2>Пул выбранного кейса</h2></div></div>
       <div id="casePool" class="grid item-grid"></div>
     </section>
-
     <section>
       <div class="section-head"><div><span class="eyebrow">all cases</span><h2>Все кейсы</h2></div></div>
       <div id="caseGrid" class="grid case-grid"></div>
     </section>
   </main>
+  <footer>Рулетка и шансы считаются локально в браузере.</footer>
 
-  <footer>Сайт статический: открытие, шансы и инвентарь считаются прямо в браузере.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -3,31 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>CS2 Case Lab — Баттлы</title>
+  <meta name="theme-color" content="#070a13" />
   <link rel="stylesheet" href="style.css" />
+  <title>CS2 Case Lab — Case Battle</title>
 </head>
-<body>
+<body data-page="battle.html">
   <header class="topbar" id="siteHeader"></header>
-  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+  <section class="live-feed"><div id="liveFeed" class="live-track"></div></section>
 
   <main class="site-shell">
-    <section class="panel" style="padding:24px">
-      <span class="eyebrow">case battle</span>
-      <h2>Фейк case battle против ботов</h2>
-      <p>Выбираешь кейс, количество игроков и раундов. Боты открывают те же кейсы. Побеждает тот, у кого суммарная стоимость дропов выше.</p>
+    <div class="section-head"><div><span class="eyebrow">case battle</span><h2>Баттл против ботов</h2><p>Платишь только за свои раунды. Победитель забирает все выпавшие предметы в баттле.</p></div></div>
+    <section class="panel soft">
       <div class="battle-config">
         <label>Кейс<select id="battleCase"></select></label>
-        <label>Раунды<select id="battleRounds"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option></select></label>
-        <label>Игроки<select id="battlePlayers"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
-        <button id="startBattleBtn" class="primary">Старт ◆ <span id="battleCost">0</span></button>
+        <label>Раунды<select id="battleRounds"><option>1</option><option>2</option><option>3</option><option>5</option></select></label>
+        <label>Игроки<select id="battlePlayers"><option>2</option><option>3</option><option>4</option></select></label>
+        <button id="startBattleBtn" class="primary">Старт</button>
       </div>
-      <p style="margin-top:12px"><span id="battleModeText">2 игрока • 1 раунд.</span> Если выигрываешь — получаешь свои дропы и бонус победителя. Если проигрываешь — дропы сгорают в риск-режиме.</p>
+      <p class="muted">Стоимость: ◆ <b id="battleCost">0</b> • <span id="battleModeText">—</span></p>
       <div id="battleResult"></div>
     </section>
   </main>
+  <footer>Баттл — фейковая локальная симуляция без реальных игроков.</footer>
 
-  <footer>Баттлы сделаны против локальных ботов, потому что GitHub Pages не имеет сервера и онлайна.</footer>
+  <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
