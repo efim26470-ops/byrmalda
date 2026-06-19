@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.12.0';
+  const VERSION = '31.13.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -63,6 +63,10 @@
   const DAILY_CONTRACT_SEED = 'daily-contracts-v1';
   const MARKET_SLOTS = 18;
   const TEAM_EVENT_NEED = 12;
+  const SELL_COMMISSION = 0.08;
+  const SEASON_TOKEN_NAME = 'ST';
+  const XP_PER_LEVEL_BASE = 120;
+  const INVESTMENT_SEED = 'invest-v31-13';
   const TEAM_THEMES = Object.freeze(['vitality','falcons','fnatic','9z','spirit','vp','cloud9','navi','faze','parivision']);
   const QUICK_MODE_LINKS = Object.freeze([
     {href:'wheel.html', icon:'🎡', label:'Колесо'},
@@ -81,6 +85,11 @@
     DRAGONHEAT: 12000, SEASON30: 8000, MINESLUCK: 5000, UPGRADE2X: 3000, UPGRADE10X: 10000, CONTRACTPLUS: 4200, BATTLEARENA: 7500, THEMEPACK: 2800,
     VITALITYWIN: 6000, NAVINATION: 6000, FAZEUP: 6000, SPIRITDROP: 6000, CLOUDLUCK: 4000, FNATICOLD: 4000, FALCONSPEED: 4000, PARIVISION: 4000, VPPOWER: 4000, NINEZBOOST: 4000,
     GUNGNIRDREAM: 18000, KATOWICE14: 14000, PATCHDROP: 2500, STICKERHUNT: 5000, AGENTMODE: 4500, DAILY2026: 2600
+  });
+
+  const PROMO_REWARDS = Object.freeze({
+    LEVELUP:{type:'xp', amount:650, label:'650 XP'}, CASETOKEN:{type:'tokens', amount:25, label:'25 сезонных жетонов'}, RANDOMSKIN:{type:'item', min:500, max:9000, label:'случайный скин'}, STICKERBOX:{type:'category', category:'sticker', min:300, max:8000, label:'случайная наклейка'}, PATCHBOX:{type:'category', category:'patch', min:250, max:6000, label:'случайный патч'}, BATTLEFREE:{type:'balance', amount:11000, label:'11 000 ₽'}, MARKETDAY:{type:'tokens', amount:40, label:'40 ST'}, DRAGONLUCK:{type:'item', min:5000, max:45000, label:'сильный предмет'}, AVATARPACK:{type:'profile', amount:1, label:'набор профиля'}, EVENTBOOST:{type:'xp_tokens', xp:350, tokens:20, label:'350 XP + 20 ST'},
+    RANKBOOST:{type:'xp', amount:1200, label:'1200 XP'}, SEASONSHOP:{type:'tokens', amount:60, label:'60 ST'}, CASECREATOR:{type:'balance', amount:12500, label:'12 500 ₽'}, INVESTOR:{type:'balance', amount:9000, label:'9 000 ₽'}, COLLECTOR:{type:'category', category:'sticker', min:700, max:12000, label:'коллекционный предмет'}
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -244,7 +253,7 @@
   let currentCase = null;
   let upgradeMode = 2;
 
-  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,mines:0,minesWins:0,tx:[],pendingUpgrade:null,upgradeMode:2,contractSelected:[],lastWheelAt:0,adViews:{},adClicks:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),minesGame:null,dailyContracts:defaultDailyContracts(),achievementsClaimed:[],collectionRewards:[],market:{bought:0,sold:0,lastSeed:''},themeEvents:{},crafts:0,createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,mines:0,minesWins:0,tx:[],pendingUpgrade:null,upgradeMode:2,contractSelected:[],lastWheelAt:0,adViews:{},adClicks:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),minesGame:null,dailyContracts:defaultDailyContracts(),achievementsClaimed:[],collectionRewards:[],market:{bought:0,sold:0,lastSeed:''},themeEvents:{},crafts:0,xp:0,seasonTokens:0,avatar:'classic',title:'Новичок',investments:[],customCases:[],rareEvents:[],createdCases:0,profileFrame:'default',createdAt:Date.now(),savedAt:Date.now()}; }
   function defaultBattlePass(){ return {active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
   function defaultSeasonalPass(){ return {seasonId:SEASONAL_PASS_SEASON_ID,seasonStartedAt:Date.now(),active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
   function defaultDailyContracts(){ return {date:'',claimed:false,counts:{}}; }
@@ -286,7 +295,7 @@
     if(!g || typeof g !== 'object' || !g.active || !g.stakeUid) return null;
     const cells = Array.isArray(g.cells) ? g.cells.map(x=>Math.round(toNum(x,-1))).filter(x=>x>=0&&x<25).slice(0,24) : [];
     const revealed = Array.isArray(g.revealed) ? Array.from(new Set(g.revealed.map(x=>Math.round(toNum(x,-1))).filter(x=>x>=0&&x<25))).slice(0,24) : [];
-    const mineCount = clamp(Math.round(toNum(g.mineCount,5)),3,10);
+    const mineCount = clamp(Math.round(toNum(g.mineCount,5)),3,18);
     return {active:true, stakeUid:String(g.stakeUid), mineCount, cells:Array.from(new Set(cells)).slice(0,mineCount), revealed, startedAt:Math.max(0,Math.round(toNum(g.startedAt,Date.now()))), lostCell:Number.isFinite(Number(g.lostCell))?Math.round(Number(g.lostCell)):null, finished:!!g.finished};
   }
   function normalizeDailyContracts(dc){
@@ -323,6 +332,16 @@
     s.market.lastSeed = String(s.market.lastSeed || '');
     s.themeEvents = (s.themeEvents && typeof s.themeEvents === 'object') ? s.themeEvents : {};
     s.crafts = Math.max(0, Math.round(toNum(s.crafts,0)));
+
+    s.xp = Math.max(0, Math.round(toNum(s.xp,0)));
+    s.seasonTokens = Math.max(0, Math.round(toNum(s.seasonTokens,0)));
+    s.avatar = String(s.avatar || 'classic');
+    s.title = String(s.title || 'Новичок');
+    s.profileFrame = String(s.profileFrame || 'default');
+    s.investments = Array.isArray(s.investments) ? s.investments.map(x=>({id:String(x.id||''), qty:Math.max(0,Math.round(toNum(x.qty,0))), avg:Math.max(0,Math.round(toNum(x.avg,0))), boughtAt:Math.max(0,Math.round(toNum(x.boughtAt,Date.now())))})).filter(x=>x.id&&x.qty>0).slice(0,80) : [];
+    s.customCases = Array.isArray(s.customCases) ? s.customCases.map(x=>({id:String(x.id||id()), name:String(x.name||'Custom Case').slice(0,48), price:Math.max(100,Math.round(toNum(x.price,1000))), itemIds:Array.isArray(x.itemIds)?x.itemIds.map(String).slice(0,40):[], theme:String(x.theme||'custom'), createdAt:Math.max(0,Math.round(toNum(x.createdAt,Date.now())))})).filter(x=>x.itemIds.length>=3).slice(0,24) : [];
+    s.rareEvents = Array.isArray(s.rareEvents) ? s.rareEvents.slice(0,40) : [];
+    s.createdCases = Math.max(0, Math.round(toNum(s.createdCases,0)));
     s.battlePass = normalizeBattlePass(s.battlePass);
     s.seasonalPass = normalizeSeasonalPass(s.seasonalPass, s.createdAt || Date.now());
     return s;
@@ -330,7 +349,7 @@
   function normalizeInvItem(it){
     if(!it || !(it.name || it.displayName)) return null;
     const r = it.rarity || 'Mil-Spec Grade';
-    let normalized = Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:fixImageUrl(it.image)||svgSkin(it.name||'Skin'), currency:it.currency||CURRENCY, priceVersion:it.priceVersion||''});
+    let normalized = Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:fixImageUrl(it.image)||svgSkin(it.name||'Skin'), currency:it.currency||CURRENCY, priceVersion:it.priceVersion||'', favorite:!!it.favorite, protected:!!it.protected});
     if(normalized.priceVersion !== PRICE_VERSION){
       const repriced = applySteamLikePrice(normalized);
       normalized.value = repriced.value; normalized.steamUsd = repriced.steamUsd; normalized.steamRub = repriced.steamRub; normalized.currency = CURRENCY; normalized.priceVersion = PRICE_VERSION;
@@ -355,7 +374,7 @@
       name: it.name || it.displayName || 'CS2 Item', displayName: it.displayName || it.name || 'CS2 Item',
       rarity: r, rarityColor: it.rarityColor || rarityColors[r] || '#60a5fa', category: it.category || 'skin',
       value: Math.max(1, Math.round(toNum(it.value, 100))), steamUsd: it.steamUsd || undefined, steamRub: it.steamRub || undefined, currency: it.currency || CURRENCY, priceVersion: it.priceVersion || PRICE_VERSION, marketHashName: it.marketHashName || it.market_hash_name || it.name,
-      image: fixImageUrl(it.image) || svgSkin(it.name || it.displayName || 'CS2 Item'), wear: it.wear || '', float: it.float || '', source: it.source || '', addedAt: Math.max(0, Math.round(toNum(it.addedAt, Date.now())))
+      image: fixImageUrl(it.image) || svgSkin(it.name || it.displayName || 'CS2 Item'), wear: it.wear || '', float: it.float || '', source: it.source || '', favorite: !!it.favorite, protected: !!it.protected, addedAt: Math.max(0, Math.round(toNum(it.addedAt, Date.now())))
     };
   }
   function compactState(raw){
@@ -365,7 +384,7 @@
       opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins, mines:s.mines, minesWins:s.minesWins,
       tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
       pendingUpgrade:s.pendingUpgrade||null, upgradeMode:s.upgradeMode||2, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, adClicks:s.adClicks||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[], minesGame:normalizeMinesGame(s.minesGame),
-      dailyContracts:normalizeDailyContracts(s.dailyContracts), achievementsClaimed:Array.isArray(s.achievementsClaimed)?s.achievementsClaimed.slice(0,80):[], collectionRewards:Array.isArray(s.collectionRewards)?s.collectionRewards.slice(0,80):[], market:s.market||{}, themeEvents:s.themeEvents||{}, crafts:Math.max(0,Math.round(toNum(s.crafts,0))),
+      dailyContracts:normalizeDailyContracts(s.dailyContracts), achievementsClaimed:Array.isArray(s.achievementsClaimed)?s.achievementsClaimed.slice(0,80):[], collectionRewards:Array.isArray(s.collectionRewards)?s.collectionRewards.slice(0,80):[], market:s.market||{}, themeEvents:s.themeEvents||{}, crafts:Math.max(0,Math.round(toNum(s.crafts,0))), xp:Math.max(0,Math.round(toNum(s.xp,0))), seasonTokens:Math.max(0,Math.round(toNum(s.seasonTokens,0))), avatar:s.avatar||'classic', title:s.title||'Новичок', profileFrame:s.profileFrame||'default', investments:s.investments||[], customCases:s.customCases||[], rareEvents:s.rareEvents||[], createdCases:Math.max(0,Math.round(toNum(s.createdCases,0))),
       battlePass:normalizeBattlePass(s.battlePass), seasonalPass:normalizeSeasonalPass(s.seasonalPass, s.createdAt||Date.now()), createdAt:s.createdAt||Date.now(), savedAt:Date.now()
     };
   }
@@ -522,6 +541,7 @@
     amount = Math.max(0, Math.round(toNum(amount,0)));
     state.balance = Math.round(toNum(state.balance,15000) + amount);
     state.earned += amount;
+    addXP(Math.max(1, Math.round(amount / 5000)), reason);
     addTx(reason, amount);
     save();
     toast(`+${fmt(amount)} · ${reason}`,'good');
@@ -544,6 +564,7 @@
     const item = compactInvItem(Object.assign({}, base, {uid:id(), baseId:base.id, displayName:(stattrak?'StatTrak™ ':'') + base.name, wear:w[0], float:rnd(w[2],w[3]).toFixed(5), value, source, addedAt:Date.now()}));
     state.inventory.unshift(item);
     state.inventory = state.inventory.slice(0,600);
+    addXP(8 + Math.min(60, Math.round(value / 5000)), `Предмет: ${item.displayName||item.name}`);
     save();
     return item;
   }
@@ -558,10 +579,13 @@
   function sellItem(uid){
     const it = state.inventory.find(x => x.uid === uid);
     if(!it) return toast('Предмет уже не найден в инвентаре','bad');
+    if(it.protected) return toast('Предмет защищён от продажи. Сними замок в инвентаре.','bad');
+    const gross = Math.round(toNum(it.value,0));
+    const net = applySaleCommission(gross);
     removeItems(uid);
-    state.sold += it.value;
-    earn(it.value, `Продажа ${it.displayName||it.name}`);
-    bpEvent('sell', {value:it.value, count:1});
+    state.sold += net;
+    earn(net, `Продажа ${it.displayName||it.name} · комиссия ${Math.round(SELL_COMMISSION*100)}%`);
+    bpEvent('sell', {value:net, count:1});
     route();
   }
 
@@ -1161,6 +1185,7 @@
   }
   function renderGlobals(){
     state = normalizeState(state);
+    syncCustomCasesIntoCatalog();
     $$('.wallet').forEach(w => { if(!$('.currency-switch', w)) w.insertAdjacentHTML('beforeend', currencySelectHtml()); });
     $$('.currency-select').forEach(x => { if(x.value !== state.currency) x.value = state.currency; });
     $$('.js-balance').forEach(x => x.textContent = fmt(state.balance));
@@ -1212,8 +1237,8 @@
     navrow.insertAdjacentHTML('afterbegin', `<div class="theme-switcher"><button type="button" class="theme-toggle" aria-haspopup="true" aria-expanded="false" aria-label="Сменить тему"><span class="theme-badge theme-badge-${esc(current.id)}">${esc(current.logo)}</span></button><div class="theme-panel" role="menu"><div class="theme-panel-title">Тема сайта</div>${choices}</div></div>`);
     const wrap = $('.theme-switcher', navrow);
     const toggle = $('.theme-toggle', wrap);
-    const close = () => { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); };
-    const open = () => { wrap.classList.add('open'); toggle.setAttribute('aria-expanded','true'); };
+    const close = () => { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); try{ document.body.classList.remove('theme-panel-open'); }catch(e){} };
+    const open = () => { wrap.classList.add('open'); toggle.setAttribute('aria-expanded','true'); try{ document.body.classList.add('theme-panel-open'); }catch(e){} };
     toggle.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); wrap.classList.contains('open') ? close() : open(); });
     wrap.addEventListener('click', e => {
       const btn = e.target.closest('[data-theme-choice]');
@@ -1279,7 +1304,7 @@
   }
   function itemCard(it, opts={}){
     const buttons = opts.buttons ? `<div class="item-actions">${opts.buttons}</div>` : '';
-    return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art">${itemImageOrPlaceholder(it)}</div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
+    return `<article class="item-card ${opts.selected?'selected':''} ${it.favorite?'favorite':''} ${it.protected?'protected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art">${itemImageOrPlaceholder(it)}</div><h4>${it.favorite?'★ ':''}${it.protected?'🔒 ':''}${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
   }
   function themeColor(c){
     const key = `${c.id||''} ${c.name||''}`.toLowerCase();
@@ -1341,18 +1366,22 @@
 
   function renderCases(){
     const root = $('#casesRoot'); if(!root) return;
+    syncCustomCasesIntoCatalog();
+    const customCases = customCaseObjects();
+    const allCases = catalog.cases;
     const classicRx = /Kilowatt|Revolution|Recoil|Dreams|Nightmares|Fracture|Clutch|Prisma|Spectrum|Snakebite|Horizon|Gamma|Danger Zone|CS20|Glove|Broken Fang|Chroma|Falchion|Shadow|Wildfire|Vanguard|Huntsman|Phoenix/i;
-    const classic = catalog.cases.filter(c=>c.kind==='case' && classicRx.test(c.name)).slice(0,24);
+    const classic = allCases.filter(c=>c.kind==='case' && classicRx.test(c.name)).slice(0,24);
     const classicIds = new Set(classic.map(c=>c.id));
-    const officialRest = catalog.cases.filter(c=>c.kind==='case' && !classicIds.has(c.id));
+    const officialRest = allCases.filter(c=>c.kind==='case' && !classicIds.has(c.id));
     const groups = [
       {id:'classic', nav:'Классические', title:'Классические CS2-кейсы', desc:'Самые узнаваемые оружейные кейсы.', arr:classic},
       {id:'official', nav:'Оружейные', title:'Официальные оружейные кейсы', desc:'Остальные кейсы с оружейными скинами.', arr:officialRest},
-      {id:'limited', nav:'Лимитированная серия', title:'Лимитированная серия / Armory Pass', desc:'Коллекции и временные наборы с редкими предметами.', arr:catalog.cases.filter(c=>c.kind==='collection')},
-      {id:'quality', nav:'По качеству', title:'Кейсы по качеству / цвету', desc:'Пулы по редкости: синие, фиолетовые, розовые, красные и другие.', arr:catalog.cases.filter(c=>/^quality-/.test(c.id))},
-      {id:'special', nav:'Ножи и перчатки', title:'Ножи и перчатки', desc:'Особые дорогие пулы с урезанными шансами.', arr:catalog.cases.filter(c=>/^special-/.test(c.id))},
-      {id:'stickers', nav:'Наклейки', title:'Турнирные наклейки', desc:'Капсулы и наборы наклеек.', arr:catalog.cases.filter(c=>/^stickers-/.test(c.id))},
-      {id:'extras', nav:'Агенты и другое', title:'Агенты, брелоки, нашивки', desc:'Дополнительные коллекционные предметы.', arr:catalog.cases.filter(c=>/^(agents|charms|patches|collectibles)-/.test(c.id))}
+      {id:'limited', nav:'Лимитированная серия', title:'Лимитированная серия / Armory Pass', desc:'Коллекции и временные наборы с редкими предметами.', arr:allCases.filter(c=>c.kind==='collection')},
+      {id:'quality', nav:'По качеству', title:'Кейсы по качеству / цвету', desc:'Пулы по редкости: синие, фиолетовые, розовые, красные и другие.', arr:allCases.filter(c=>/^quality-/.test(c.id))},
+      {id:'special', nav:'Ножи и перчатки', title:'Ножи и перчатки', desc:'Особые дорогие пулы с урезанными шансами.', arr:allCases.filter(c=>/^special-/.test(c.id))},
+      {id:'stickers', nav:'Наклейки', title:'Турнирные наклейки', desc:'Капсулы и наборы наклеек.', arr:allCases.filter(c=>/^stickers-/.test(c.id))},
+      {id:'extras', nav:'Агенты и другое', title:'Агенты, брелоки, нашивки', desc:'Дополнительные коллекционные предметы.', arr:allCases.filter(c=>/^(agents|charms|patches|collectibles)-/.test(c.id))},
+      {id:'custom', nav:'Мои кейсы', title:'Case Creator · мои кейсы', desc:'Кастомные кейсы, созданные во вкладке «Развитие».', arr:customCases}
     ].filter(g=>g.arr && g.arr.length);
     const nav = groups.map(g=>`<button class="case-nav-btn" type="button" data-action="case-jump" data-target="${esc(g.id)}">${esc(g.nav)} <span>${g.arr.length}</span></button>`).join('');
     const sections = groups.map(g => `<section class="block case-section" id="case-section-${esc(g.id)}"><div class="head"><div><h2>${esc(g.title)}</h2><p>${esc(g.desc)}</p></div><p>${g.arr.length} шт.</p></div><div class="case-grid grid">${g.arr.map(caseCard).join('')}</div></section>`).join('');
@@ -1370,6 +1399,7 @@
     el.scrollIntoView({behavior:'smooth', block:'start'});
   }
   function openCaseModal(caseId, autoSpin){
+    syncCustomCasesIntoCatalog();
     const c = catalog.cases.find(x => x.id === caseId);
     if(!c) return toast('Кейс не найден','bad');
     currentCase = c.id;
@@ -1451,6 +1481,7 @@
   }
   function spinCase(caseId, opts={}){
     if(busy.case) return toast('Рулетка уже крутится','warn');
+    syncCustomCasesIntoCatalog();
     const c = catalog.cases.find(x => x.id === caseId);
     if(!c) return toast('Кейс не найден','bad');
     const fast = !!(opts && opts.fast);
@@ -1458,6 +1489,8 @@
     const totalCost = Math.max(1, Math.round(toNum(c.price,0) * count));
     if(!spend(totalCost, count > 1 ? `Открытие ${c.name} x${count}` : `Открытие ${c.name}`)) return;
     state.opened += count;
+    addXP(count * 18, `Открытие кейса`);
+    addSeasonTokens(Math.max(1, Math.round(count / 2)), 'Открытие кейса');
     save();
     busy.case = true;
     const buttons = $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]');
@@ -1471,6 +1504,7 @@
       busy.case = false;
       buttons.forEach(b => b.disabled = false);
       if(mainBtn) mainBtn.textContent = `Открыть 1x за ${fmt(c.price)}`;
+      maybeRareCaseEvent(c, drops, totalCost);
       if(count === 1) showDrop(drops[0], c); else showBatchDrop(drops, c, totalCost);
       return;
     }
@@ -1496,6 +1530,7 @@
     busy.case = false;
     $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]').forEach(b => b.disabled=false);
     if(btn){ btn.disabled=false; btn.textContent=`Открыть 1x за ${fmt(c.price)}`; }
+    maybeRareCaseEvent(c, [inv], c.price);
     showDrop(inv, c);
   }
   function showDrop(it,c){
@@ -1515,10 +1550,11 @@
     const set = new Set(Array.isArray(uids)?uids:[]);
     const items = state.inventory.filter(x => set.has(x.uid));
     if(!items.length) return toast('Эти предметы уже проданы или не найдены','bad');
-    const total = items.reduce((s,x)=>s+toNum(x.value,0),0);
-    removeItems(items.map(x=>x.uid));
+    const gross = items.filter(x=>!x.protected).reduce((s,x)=>s+toNum(x.value,0),0);
+    const total = applySaleCommission(gross);
+    removeItems(items.filter(x=>!x.protected).map(x=>x.uid));
     state.sold += Math.round(total);
-    earn(total, `Массовая продажа x${items.length}`);
+    earn(total, `Массовая продажа x${items.length} · комиссия`);
     bpEvent('sell', {value:total, count:items.length});
     closeModal($('#dropModal'));
     route();
@@ -1550,25 +1586,27 @@
     else if(srt === 'rarity') arr.sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0));
     else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
     const visibleTotal = arr.reduce((sum,x)=>sum + toNum(x.value,0),0);
-    root.innerHTML = arr.length ? `<div class="notice inv-visible-summary"><b>Показано:</b> ${arr.length} из ${fullInv.length} предметов · сумма видимых: <b>${fmt(visibleTotal)}</b></div><div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо. Если только что обновлял сайт на GitHub Pages — нажми Ctrl+F5, чтобы браузер не держал старый cache.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
+    root.innerHTML = arr.length ? `<div class="notice inv-visible-summary"><b>Показано:</b> ${arr.length} из ${fullInv.length} предметов · сумма видимых: <b>${fmt(visibleTotal)}</b> · продажа с комиссией ${Math.round(SELL_COMMISSION*100)}%</div><div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-action="toggle-favorite" data-uid="${esc(x.uid)}">${x.favorite?'★':'☆'}</button><button data-action="toggle-protect" data-uid="${esc(x.uid)}">${x.protected?'🔒':'🔓'}</button><button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо. Если только что обновлял сайт на GitHub Pages — нажми Ctrl+F5, чтобы браузер не держал старый cache.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
   }
   function sellAllInventory(){
-    const items = [...state.inventory].map(normalizeInvItem).filter(Boolean);
+    const items = [...state.inventory].map(normalizeInvItem).filter(x=>x && !x.protected);
     if(!items.length) return toast('Инвентарь пуст','warn');
-    const total = Math.round(items.reduce((sum,x)=>sum + toNum(x.value,0),0));
-    if(!confirm(`Продать весь инвентарь: ${items.length} предметов за ${fmt(total)}?`)) return;
+    const gross = Math.round(items.reduce((sum,x)=>sum + toNum(x.value,0),0));
+    const total = applySaleCommission(gross);
+    if(!confirm(`Продать весь незаблокированный инвентарь: ${items.length} предметов за ${fmt(total)} после комиссии?`)) return;
     removeItems(items.map(x=>x.uid));
     state.sold += total;
-    earn(total, `Продажа всего инвентаря x${items.length}`);
+    earn(total, `Продажа всего инвентаря x${items.length} · комиссия`);
     renderInventory();
   }
   function sellCheap(){
-    const cheap = state.inventory.filter(x => x.value < 200);
+    const cheap = state.inventory.filter(x => x.value < 200 && !x.protected);
     if(!cheap.length) return toast(`Нет предметов дешевле ${fmt(200)}`,'warn');
-    const total = cheap.reduce((s,x)=>s+x.value,0);
+    const gross = cheap.reduce((s,x)=>s+x.value,0);
+    const total = applySaleCommission(gross);
     removeItems(cheap.map(x=>x.uid));
     state.sold += total;
-    earn(total, `Массовая продажа ${cheap.length} предметов`);
+    earn(total, `Массовая продажа ${cheap.length} предметов · комиссия`);
     renderInventory();
   }
 
@@ -1829,13 +1867,13 @@
     const current = minesActiveGame();
     const options = inv.map(x=>`<option value="${esc(x.uid)}">${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
     const selected = current ? state.inventory.find(x=>x.uid===current.stakeUid) : inv[0];
-    const gameHtml = current ? minesBoardHtml(current, selected) : `<div class="mines-start-card"><label class="field-label">Скин для ставки</label><select id="minesStake">${options}</select><label class="field-label">Мин на поле</label><select id="minesCount"><option value="3">3 мины · легче</option><option value="5" selected>5 мин · баланс</option><option value="7">7 мин · риск</option><option value="10">10 мин · хардкор</option></select><div id="minesInfo"></div><button class="btn primary huge" data-action="start-mines" ${inv.length?'':'disabled'}>Начать сапёр</button><p class="small">Выбери клетки. Попал на мину — скин исчезает. Забрал вовремя — получаешь предмет дороже твоей ставки.</p></div>`;
+    const gameHtml = current ? minesBoardHtml(current, selected) : `<div class="mines-start-card"><label class="field-label">Скин для ставки</label><select id="minesStake">${options}</select><label class="field-label">Мин на поле</label><select id="minesCount"><option value="3">Easy · 3 мины</option><option value="5" selected>Medium · 5 мин</option><option value="9">Hard · 9 мин</option><option value="14">Insane · 14 мин</option></select><div id="minesInfo"></div><button class="btn primary huge" data-action="start-mines" ${inv.length?'':'disabled'}>Начать сапёр</button><p class="small">Выбери клетки. Попал на мину — скин исчезает. Забрал вовремя — получаешь предмет дороже твоей ставки.</p></div>`;
     root.innerHTML = `<div class="mines-hero panel"><span class="kicker">Skin Mines</span><h2>Сапёр на скины</h2><p>Стилизованный сапёр без реальных ставок и вывода: всё работает локально в браузере. Чем больше безопасных клеток открыл — тем выше множитель награды.</p><div class="grid cards-3"><div class="stat"><small>Игр</small><b>${state.mines||0}</b></div><div class="stat"><small>Побед</small><b>${state.minesWins||0}</b></div><div class="stat"><small>Активный риск</small><b>${selected?fmt(selected.value):'нет'}</b></div></div></div><div class="mines-layout"><aside class="panel mines-sidebar"><h3>Условия</h3>${selected?itemCard(selected):'<div class="empty">В инвентаре нет предметов для ставки.</div>'}<div class="notice"><b>Совет:</b> на 3 минах множитель растёт медленно, на 10 — быстро, но риск огромный.</div></aside><section>${gameHtml}</section></div>`;
     if(!current) renderMinesInfo();
   }
   function renderMinesInfo(){
     const stake = minesStakeItem() || state.inventory[0];
-    const mines = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,10);
+    const mines = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,18);
     const el = $('#minesInfo'); if(!el) return;
     const preview = [1,3,5,8].map(n=>`<span>${n} safe: <b>${minesMultiplier(mines,n).toFixed(2)}x</b></span>`).join('');
     el.innerHTML = stake ? `<div class="battle-price"><span>Ставка</span><b>${fmt(stake.value)}</b></div><div class="battle-price"><span>Поле</span><b>5×5 / ${mines} мин</b></div><div class="mines-preview">${preview}</div>` : '<div class="empty">Нет скинов для игры.</div>';
@@ -1858,7 +1896,7 @@
     if(minesActiveGame()) return toast('Сначала заверши текущий сапёр','warn');
     const stake = minesStakeItem() || state.inventory[0];
     if(!stake) return toast('В инвентаре нет скина для ставки','bad');
-    const mineCount = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,10);
+    const mineCount = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,18);
     const cells = [];
     while(cells.length < mineCount){ const n = Math.floor(cryptoRandom()*25); if(!cells.includes(n)) cells.push(n); }
     state.minesGame = {active:true, stakeUid:stake.uid, mineCount, cells, revealed:[], startedAt:Date.now(), finished:false, lostCell:null};
@@ -1901,13 +1939,13 @@
   function renderBattle(){
     const root = $('#battleRoot'); if(!root) return;
     const first = catalog.cases[0];
-    root.innerHTML = `<div class="battle-layout improved-battle"><aside class="panel battle-sidebar"><span class="kicker">Case Battle</span><h3>Баттл против ботов</h3><p>Ты оплачиваешь своё место. Каждый игрок открывает один и тот же кейс. Победитель по сумме дропа забирает весь пул.</p><label class="field-label">Кейс</label><select id="battleCase">${catalog.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${fmt(c.price)}</option>`).join('')}</select><label class="field-label">Режим</label><select id="battleMode"><option value="1v1">1 vs 1</option><option value="1v1v1" selected>1 vs 1 vs 1</option><option value="2v2">2 vs 2 Team</option></select><div id="battleInfo"></div><button class="btn primary huge" data-action="start-battle">Начать баттл</button><p class="small">Без реальных ставок и вывода. Всё сохраняется в localStorage.</p></aside><section class="battle-stage"><div class="battle-top"><h2>Арена</h2><p id="battleStatus">Выбери кейс и режим, затем начни баттл.</p></div><div id="battleArena" class="battle-arena"><div class="empty">Пока баттла нет.</div></div></section></div>`;
+    root.innerHTML = `<div class="battle-layout improved-battle"><aside class="panel battle-sidebar"><span class="kicker">Case Battle</span><h3>Баттл против ботов</h3><p>Ты оплачиваешь своё место. Каждый игрок открывает один и тот же кейс. Победитель по сумме дропа забирает весь пул.</p><label class="field-label">Кейс</label><select id="battleCase">${catalog.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${fmt(c.price)}</option>`).join('')}</select><label class="field-label">Режим</label><select id="battleMode"><option value="1v1">1 vs 1</option><option value="1v1v1" selected>1 vs 1 vs 1</option><option value="2v2">2 vs 2 Team</option><option value="1v1v1v1">1 vs 1 vs 1 vs 1</option><option value="crazy">Crazy Mode</option><option value="underdog">Underdog Mode</option></select><div id="battleInfo"></div><button class="btn primary huge" data-action="start-battle">Начать баттл</button><p class="small">Без реальных ставок и вывода. Всё сохраняется в localStorage.</p></aside><section class="battle-stage"><div class="battle-top"><h2>Арена</h2><p id="battleStatus">Выбери кейс и режим, затем начни баттл.</p></div><div id="battleArena" class="battle-arena"><div class="empty">Пока баттла нет.</div></div></section></div>`;
     if(first) $('#battleCase').value = first.id;
     renderBattleInfo();
   }
   function battlePlayers(mode){
     if(mode === '1v1') return ['Ты','BOT Max'];
-    if(mode === '2v2') return ['Ты','BOT Max','BOT Neo','BOT Rex'];
+    if(mode === '2v2' || mode === '1v1v1v1' || mode === 'crazy' || mode === 'underdog') return ['Ты','BOT Max','BOT Neo','BOT Rex'];
     return ['Ты','BOT Max','BOT Neo'];
   }
   function renderBattleInfo(){
@@ -1931,7 +1969,8 @@
     busy.battle = true;
     state.battles += 1;
     save();
-    const players = names.map((name,idx) => ({name, team: mode==='2v2' ? (idx%2===0?'A':'B') : name, item: weighted(c)}));
+    const battleCasePool = catalog.cases.filter(x=>x.items&&x.items.length&&toNum(x.price,0)>0);
+    const players = names.map((name,idx) => { const pc = mode==='crazy' ? sample(battleCasePool) : c; return {name, caseName:pc.name, team: mode==='2v2' ? (idx%2===0?'A':'B') : name, item: weighted(pc)}; });
     const arena = $('#battleArena');
     const status = $('#battleStatus');
     if(status) status.textContent = 'Кейсы открываются...';
@@ -1956,7 +1995,7 @@
         const winTeam = (sums.A >= sums.B) ? 'A' : 'B';
         winner = {team:winTeam, name:`Team ${winTeam}`, value:sums[winTeam]};
       }else{
-        const top = [...results].sort((a,b)=>b.inv.value-a.inv.value)[0];
+        const top = [...results].sort((a,b)=> mode==='underdog' ? a.inv.value-b.inv.value : b.inv.value-a.inv.value)[0];
         winner = {team:top.team, name:top.name, value:top.inv.value};
       }
       const userWon = mode === '2v2' ? winner.team === 'A' : winner.name === 'Ты';
@@ -2728,7 +2767,7 @@
     const seed = marketSeed();
     let pool = catalog.items.filter(x=>x && realImageUrl(x.image) && toNum(x.value,0)>=300 && toNum(x.value,0)<=120000);
     if(pool.length < MARKET_SLOTS) pool = catalog.items.filter(x=>x && toNum(x.value,0)>0);
-    return [...pool].sort((a,b)=>stableNoise(seed+':'+(a.id||a.name))-stableNoise(seed+':'+(b.id||b.name))).slice(0,MARKET_SLOTS).map(x=>Object.assign({},x,{marketPrice:Math.round(toNum(x.value,0)*(1.04+stableNoise(seed+':p:'+x.name)*.22))}));
+    return [...pool].sort((a,b)=>stableNoise(seed+':'+(a.id||a.name))-stableNoise(seed+':'+(b.id||b.name))).slice(0,MARKET_SLOTS).map(x=>{ const n=stableNoise(seed+':p:'+x.name); const trend=Math.round((stableNoise(seed+':t:'+x.name)-.5)*26); return Object.assign({},x,{marketTrend:trend,marketPrice:Math.round(toNum(x.value,0)*(1.00+n*.26)*(1+trend/100))}); });
   }
   function marketBuy(itemId){
     const it = marketItems().find(x=>(x.id||slug(x.name))===itemId || slug(x.name)===itemId); if(!it) return toast('Предмет маркета не найден','bad');
@@ -2773,7 +2812,7 @@
     const dailyHtml = daily.map(t=>{ const p=dailyProgress(t); return `<div class="bp-req"><div><b>${esc(t.title)}</b><small>${esc(bpReqTitle(t.req))} · ${Math.min(p.got,p.need)} / ${p.need}</small></div><div class="bp-bar"><span style="width:${p.pct}%"></span></div></div>`; }).join('');
     const achHtml = achievementList().map(a=>{ const claimed=(state.achievementsClaimed||[]).includes(a.id), done=a.done(); return `<article class="mini-card ${claimed?'claimed':done?'ready':''}"><h3>${esc(a.title)}</h3><p>${esc(a.desc)}</p><b>${fmt(a.reward)}</b><button class="btn ${done&&!claimed?'primary':''}" data-action="claim-achievement" data-achievement="${esc(a.id)}" ${done&&!claimed?'':'disabled'}>${claimed?'Получено':done?'Забрать':'Не выполнено'}</button></article>`; }).join('');
     const colHtml = collectionSets().map(c=>{ const got=state.inventory.filter(c.filter).length, done=got>=c.need, claimed=(state.collectionRewards||[]).includes(c.id); return `<article class="mini-card ${claimed?'claimed':done?'ready':''}"><h3>${esc(c.title)}</h3><p>${esc(c.desc)}</p><div class="bp-bar"><span style="width:${clamp(got/c.need*100,0,100)}%"></span></div><small>${Math.min(got,c.need)} / ${c.need} · ${esc(c.reward)}</small><button class="btn ${done&&!claimed?'primary':''}" data-action="claim-collection" data-collection="${esc(c.id)}" ${done&&!claimed?'':'disabled'}>${claimed?'Забрано':done?'Получить кейс':'Собирать'}</button></article>`; }).join('');
-    const marketHtml = marketItems().map(it=>`<article class="market-card">${itemImageOrPlaceholder(it,'CS2')}<h3>${esc(it.name)}</h3><p>${esc(it.rarity||'CS2')} · ${fmt(it.marketPrice)}</p><button class="btn primary" data-action="market-buy" data-item="${esc(it.id||slug(it.name))}">Купить</button></article>`).join('');
+    const marketHtml = marketItems().map(it=>`<article class="market-card">${itemImageOrPlaceholder(it,'CS2')}<h3>${esc(it.name)}</h3><p>${esc(it.rarity||'CS2')} · ${fmt(it.marketPrice)} <span class="${it.marketTrend>=0?'plus':'minus'}">${it.marketTrend>=0?'+':''}${it.marketTrend}%</span></p><button class="btn primary" data-action="market-buy" data-item="${esc(it.id||slug(it.name))}">Купить</button></article>`).join('');
     const stickerCount=cosmeticPool('sticker').length, patchCount=cosmeticPool('patch').length;
     const theme = getTheme(currentThemeId()); const team = TEAM_THEMES.includes(theme.id) ? teamEventState(theme.id) : null;
     const themeHtml = team ? `<div class="theme-event-card"><div><span class="theme-badge theme-badge-${esc(theme.id)}">${esc(theme.logo)}</span><h3>${esc(theme.title)} event</h3><p>Открой ${TEAM_EVENT_NEED} кейсов с активной командной темой и получи тематический приз.</p><div class="bp-bar"><span style="width:${clamp(team.count/TEAM_EVENT_NEED*100,0,100)}%"></span></div><small>${team.count}/${TEAM_EVENT_NEED}</small></div><button class="btn primary" data-action="claim-theme-event" data-theme="${esc(theme.id)}" ${team.count>=TEAM_EVENT_NEED&&!team.claimed?'':'disabled'}>${team.claimed?'Получено':'Забрать'}</button></div>` : `<div class="notice">Выбери командную тему в левом верхнем переключателе, чтобы активировать командный ивент.</div>`;
@@ -2829,6 +2868,167 @@
     try{ state = compactState(JSON.parse(decodeURIComponent(escape(atob(box.value.trim()))))); save(); toast('Save импортирован','good'); route(); }
     catch(e){ toast('Не удалось импортировать save','bad'); }
   }
+
+
+
+  /* v31.13 — progression pack */
+  function addXP(amount, reason='XP'){
+    amount = Math.max(0, Math.round(toNum(amount,0)));
+    if(!amount) return;
+    state.xp = Math.max(0, Math.round(toNum(state.xp,0))) + amount;
+  }
+  function accountLevel(){
+    const xp = Math.max(0, Math.round(toNum(state.xp,0)));
+    let lvl = 1, need = XP_PER_LEVEL_BASE, left = xp;
+    while(left >= need && lvl < 200){ left -= need; lvl++; need = Math.round(XP_PER_LEVEL_BASE * Math.pow(lvl, 1.18)); }
+    return {level:lvl, xp, current:left, need, pct:clamp(left/need*100,0,100)};
+  }
+  function profileTitleList(){ return ['Новичок','Коллекционер','Трейдер','Контрактор','Case Master','Dragon Hunter','Major Baron','Global Collector']; }
+  function defaultTitle(){ const lvl=accountLevel().level; const list=profileTitleList(); return list[clamp(Math.floor((lvl-1)/8),0,list.length-1)]; }
+  function addSeasonTokens(amount, reason=''){ amount=Math.max(0,Math.round(toNum(amount,0))); if(!amount) return; state.seasonTokens=Math.max(0,Math.round(toNum(state.seasonTokens,0)))+amount; }
+  function applySaleCommission(gross){ gross=Math.max(0,Math.round(toNum(gross,0))); return Math.max(0, Math.round(gross * (1 - SELL_COMMISSION))); }
+  function rareLog(type, text){ state.rareEvents=Array.isArray(state.rareEvents)?state.rareEvents:[]; state.rareEvents.unshift({id:id(),type,text,time:Date.now()}); state.rareEvents=state.rareEvents.slice(0,40); }
+  function maybeRareCaseEvent(c, drops, cost){
+    if(!c || !drops || !drops.length) return;
+    const r = cryptoRandom();
+    if(r < .018){ const refund = Math.max(100, Math.round(toNum(cost,0) * rnd(.18,.55))); earn(refund, 'Rare Event: Lucky Refund'); rareLog('refund', `Возврат ${fmt(refund)} после ${c.name}`); toast('Rare Event: Lucky Refund!','good'); }
+    else if(r < .030){ const extra = addItem(weighted(c), 'rare-double-drop'); addLive('Ты', extra); rareLog('double', `Double Drop: ${extra.displayName}`); toast('Rare Event: Double Drop!','good'); }
+    else if(r < .045){ addSeasonTokens(12, 'Golden Ticket'); rareLog('ticket', `Golden Ticket: +12 ${SEASON_TOKEN_NAME}`); toast(`Rare Event: Golden Ticket +12 ${SEASON_TOKEN_NAME}`,'good'); }
+  }
+  function customCaseObjects(){
+    state.customCases = Array.isArray(state.customCases) ? state.customCases : [];
+    return state.customCases.map(cc=>{
+      const items = cc.itemIds.map(pid=>catalog.items.find(x=>String(x.id||slug(x.name))===String(pid) || slug(x.name)===String(pid))).filter(Boolean);
+      return {id:cc.id, name:cc.name, price:cc.price, image:svgCase(cc.theme||'CUSTOM'), items:items.length?items:catalog.items.slice(0,12), source:'custom-creator', kind:'custom'};
+    }).filter(c=>c.items.length>=3);
+  }
+  function syncCustomCasesIntoCatalog(){
+    try{
+      const custom = customCaseObjects();
+      const ids = new Set(custom.map(x=>x.id));
+      catalog.cases = catalog.cases.filter(c=>c.source!=='custom-creator' && !ids.has(c.id)).concat(custom);
+    }catch(e){}
+  }
+  function investmentDefs(){
+    return [
+      {id:'cases', title:'Кейсы CS2', emoji:'📦', base:2200, desc:'Стабильный актив, растёт медленно.'},
+      {id:'stickers', title:'Наклейки Major', emoji:'🏷️', base:1600, desc:'Волатильные наклейки турниров.'},
+      {id:'patches', title:'Патчи', emoji:'🧵', base:900, desc:'Дешёвый вход и редкие скачки.'},
+      {id:'gold', title:'Gold/Holo фонд', emoji:'✨', base:6200, desc:'Дорогой актив с сильными колебаниями.'},
+      {id:'operation', title:'Operation Pass', emoji:'🎫', base:2500, desc:'Пропуски и лимитированные предметы.'}
+    ];
+  }
+  function investmentPrice(def){
+    const day = DAY_KEY(); const n=stableNoise(INVESTMENT_SEED+':'+day+':'+def.id); const n2=stableNoise(INVESTMENT_SEED+':trend:'+def.id+':'+new Date().getUTCMonth());
+    return Math.max(100, Math.round(def.base * (.82 + n*.46) * (.92+n2*.24)));
+  }
+  function buyInvestment(idv){ const d=investmentDefs().find(x=>x.id===idv); if(!d) return toast('Актив не найден','bad'); const price=investmentPrice(d); if(!spend(price, `Инвестиция: ${d.title}`)) return; const inv=state.investments.find(x=>x.id===idv); if(inv){ inv.avg=Math.round((inv.avg*inv.qty+price)/(inv.qty+1)); inv.qty++; } else state.investments.push({id:idv,qty:1,avg:price,boughtAt:Date.now()}); addXP(25,'Инвестиция'); save(); renderHub(); }
+  function sellInvestment(idv){ const d=investmentDefs().find(x=>x.id===idv), inv=state.investments.find(x=>x.id===idv); if(!d||!inv||inv.qty<1) return toast('Нет такого актива','bad'); const price=applySaleCommission(investmentPrice(d)); inv.qty--; if(inv.qty<=0) state.investments=state.investments.filter(x=>x!==inv); earn(price, `Продажа инвестиции: ${d.title}`); save(); renderHub(); }
+  function seasonStoreItems(){ return [
+    {id:'case', title:'Season Drop Case', cost:30, type:'item', min:800, max:12000},
+    {id:'xp', title:'XP Boost', cost:20, type:'xp', amount:500},
+    {id:'sticker', title:'Sticker Pack', cost:24, type:'category', category:'sticker', min:400, max:9000},
+    {id:'premium', title:'Premium Skin Drop', cost:70, type:'item', min:5000, max:60000},
+    {id:'avatar', title:'Profile Cosmetic', cost:18, type:'profile'}
+  ]; }
+  function buySeasonStore(idv){ const it=seasonStoreItems().find(x=>x.id===idv); if(!it) return toast('Товар не найден','bad'); if(toNum(state.seasonTokens,0)<it.cost) return toast(`Нужно ${it.cost} ${SEASON_TOKEN_NAME}`,'bad'); state.seasonTokens-=it.cost; applyRewardObject(it, `Season Store: ${it.title}`); save(); renderHub(); }
+  function applyRewardObject(r, reason='Награда'){
+    if(!r) return;
+    if(typeof r === 'number') return earn(r, reason);
+    if(r.type==='balance') return earn(r.amount||0, reason);
+    if(r.type==='xp'){ addXP(r.amount||0, reason); toast(`+${r.amount||0} XP · ${reason}`,'good'); return; }
+    if(r.type==='tokens'){ addSeasonTokens(r.amount||0, reason); toast(`+${r.amount||0} ${SEASON_TOKEN_NAME} · ${reason}`,'good'); return; }
+    if(r.type==='xp_tokens'){ addXP(r.xp||0, reason); addSeasonTokens(r.tokens||0, reason); toast(`+${r.xp||0} XP и +${r.tokens||0} ${SEASON_TOKEN_NAME}`,'good'); return; }
+    if(r.type==='category'){ const pool=catalog.items.filter(x=>String(x.category||x.name||'').toLowerCase().includes(r.category||'') && toNum(x.value,0)>=toNum(r.min,0) && toNum(x.value,0)<=toNum(r.max,1e9)); const it=addItem(sample(pool.length?pool:catalog.items), reason); addLive('Ты',it); showDrop(it,null); return; }
+    if(r.type==='item'){ const pool=catalog.items.filter(x=>toNum(x.value,0)>=toNum(r.min,0) && toNum(x.value,0)<=toNum(r.max,1e9)); const it=addItem(sample(pool.length?pool:catalog.items), reason); addLive('Ты',it); showDrop(it,null); return; }
+    if(r.type==='profile'){ state.profileFrame='event'; addXP(150, reason); toast('Получена косметика профиля +150 XP','good'); return; }
+  }
+  function createCustomCase(){
+    const name = ($('#customCaseName') && $('#customCaseName').value.trim()) || 'My Custom Case';
+    const price = clamp(Math.round(toNum($('#customCasePrice') && $('#customCasePrice').value, 2500)), 200, 90000);
+    const mode = ($('#customCaseMode') && $('#customCaseMode').value) || 'balanced';
+    let pool = catalog.items.filter(x=>toNum(x.value,0)>0);
+    if(mode==='stickers') pool = pool.filter(x=>/sticker/i.test(x.category||x.name||''));
+    if(mode==='premium') pool = pool.filter(x=>toNum(x.value,0)>=3000);
+    if(mode==='budget') pool = pool.filter(x=>toNum(x.value,0)<=8000);
+    pool = pool.length?pool:catalog.items;
+    const seed = `${Date.now()}:${name}:${mode}`;
+    const items = [...pool].sort((a,b)=>stableNoise(seed+':'+a.name)-stableNoise(seed+':'+b.name)).slice(0, clamp(Math.round(toNum($('#customCaseSize')&&$('#customCaseSize').value,18)),8,40));
+    const cc = {id:'custom-'+slug(name)+'-'+Date.now().toString(36), name, price, theme:mode, itemIds:items.map(x=>x.id||slug(x.name)), createdAt:Date.now()};
+    state.customCases = Array.isArray(state.customCases) ? state.customCases : [];
+    state.customCases.unshift(cc); state.customCases=state.customCases.slice(0,24); state.createdCases=Math.round(toNum(state.createdCases,0))+1; addXP(120,'Case Creator'); save(); syncCustomCasesIntoCatalog(); renderHub(); toast('Кастомный кейс создан','good');
+  }
+  function deleteCustomCase(idv){ state.customCases=(state.customCases||[]).filter(x=>x.id!==idv); save(); syncCustomCasesIntoCatalog(); renderHub(); }
+  function collectorMissions(){ return [
+    {id:'mission-awp', title:'AWP Hunter', desc:'Собери 3 AWP-предмета', need:3, filter:x=>/AWP/i.test(x.name||x.displayName||''), reward:{type:'item',min:3000,max:30000}},
+    {id:'mission-holo', title:'Holo Collector', desc:'Собери 4 Holo/Gold наклейки', need:4, filter:x=>/Holo|Gold|Foil|Lenticular/i.test(x.name||'')&&/sticker/i.test(x.category||x.name||''), reward:{type:'tokens',amount:55}},
+    {id:'mission-knife', title:'Knife Dream', desc:'Получи 1 нож или перчатки', need:1, filter:x=>/^★|Knife|Gloves/i.test(x.name||x.displayName||''), reward:{type:'xp_tokens',xp:800,tokens:80}}
+  ]; }
+  function claimMission(idv){ const m=collectorMissions().find(x=>x.id===idv); if(!m) return; state.collectionRewards=state.collectionRewards||[]; if(state.collectionRewards.includes(idv)) return toast('Миссия уже закрыта','warn'); const got=state.inventory.filter(m.filter).length; if(got<m.need) return toast('Миссия ещё не выполнена','bad'); state.collectionRewards.push(idv); applyRewardObject(m.reward, `Миссия: ${m.title}`); save(); renderHub(); }
+  function seasonalEventDefs(){ return [
+    {id:'dragon-week', title:'Dragon Week', desc:'Открой 20 кейсов и получи жетоны.', need:20, metric:'opened', reward:{type:'tokens',amount:75}},
+    {id:'sticker-fest', title:'Sticker Fest', desc:'Собери 5 наклеек в инвентаре.', need:5, metric:'stickers', reward:{type:'category',category:'sticker',min:1000,max:18000}},
+    {id:'knife-hunt', title:'Knife Hunt', desc:'Сыграй 5 баттлов.', need:5, metric:'battles', reward:{type:'item',min:2000,max:22000}}
+  ]; }
+  function eventProgress(ev){ if(ev.metric==='opened') return Math.min(state.opened||0,ev.need); if(ev.metric==='battles') return Math.min(state.battles||0,ev.need); if(ev.metric==='stickers') return Math.min(state.inventory.filter(x=>/sticker/i.test(x.category||x.name||'')).length,ev.need); return 0; }
+  function claimSeasonEvent(idv){ const ev=seasonalEventDefs().find(x=>x.id===idv); if(!ev) return; state.collectionRewards=state.collectionRewards||[]; const key='season-event-'+idv; if(state.collectionRewards.includes(key)) return toast('Ивент уже получен','warn'); if(eventProgress(ev)<ev.need) return toast('Ивент не завершён','bad'); state.collectionRewards.push(key); applyRewardObject(ev.reward, `Ивент: ${ev.title}`); save(); renderHub(); }
+  function setAvatar(idv){ state.avatar=String(idv||'classic'); save(); renderProfile(); toast('Аватар обновлён','good'); }
+  function setTitle(idv){ state.title=String(idv||defaultTitle()); save(); renderProfile(); toast('Титул обновлён','good'); }
+  function toggleInventoryFlag(uid, flag){ const it=state.inventory.find(x=>x.uid===uid); if(!it) return; it[flag]=!it[flag]; save(); renderInventory(); }
+  function profileChartsHtml(){
+    const vals=[['Открыто',state.opened||0],['Апгрейды',state.upgrades||0],['Контракты',state.contracts||0],['Battle',state.battles||0],['Сапёр',state.mines||0],['Победы',state.wins||0]];
+    const max=Math.max(1,...vals.map(x=>x[1]));
+    return `<div class="profile-chart">${vals.map(x=>`<div><span>${esc(x[0])}</span><i><b style="width:${clamp(x[1]/max*100,2,100)}%"></b></i><strong>${x[1]}</strong></div>`).join('')}</div>`;
+  }
+  function profileCosmeticsHtml(){ const avatars=[['classic','✦'],['dragon','🐉'],['major','🏆'],['trader','💼'],['knife','🔪'],['sticker','🏷️']]; const titles=profileTitleList(); return `<div class="cosmetic-grid"><div><h3>Аватар</h3><div class="craft-row">${avatars.map(a=>`<button class="small-btn ${state.avatar===a[0]?'active':''}" data-action="set-avatar" data-avatar="${a[0]}">${a[1]}</button>`).join('')}</div></div><div><h3>Титул</h3><div class="craft-row">${titles.map(t=>`<button class="small-btn ${state.title===t?'active':''}" data-action="set-title" data-title="${esc(t)}">${esc(t)}</button>`).join('')}</div></div></div>`; }
+  const oldRenderHub = renderHub;
+  renderHub = function(){
+    const root = $('#hubRoot'); if(!root) return oldRenderHub();
+    oldRenderHub();
+    const lvl=accountLevel();
+    const invDefs=investmentDefs();
+    const invHtml=invDefs.map(d=>{ const h=(state.investments||[]).find(x=>x.id===d.id); const p=investmentPrice(d); const diff=h?Math.round((p-h.avg)/Math.max(1,h.avg)*100):0; return `<article class="mini-card"><h3>${d.emoji} ${esc(d.title)}</h3><p>${esc(d.desc)}</p><b>${fmt(p)} <span class="${diff>=0?'plus':'minus'}">${h?`${diff>=0?'+':''}${diff}%`:''}</span></b><small>В наличии: ${h?h.qty:0}${h?` · средняя ${fmt(h.avg)}`:''}</small><button class="btn primary" data-action="buy-investment" data-invest="${d.id}">Купить</button><button class="btn" data-action="sell-investment" data-invest="${d.id}" ${h&&h.qty?'':'disabled'}>Продать</button></article>`; }).join('');
+    const storeHtml=seasonStoreItems().map(x=>`<article class="mini-card"><h3>${esc(x.title)}</h3><p>Цена: <b>${x.cost} ${SEASON_TOKEN_NAME}</b></p><button class="btn primary" data-action="buy-season-store" data-store="${x.id}" ${toNum(state.seasonTokens,0)>=x.cost?'':'disabled'}>Купить</button></article>`).join('');
+    const cc=(state.customCases||[]).map(x=>`<div class="tx"><div><b>${esc(x.name)}</b><small>${fmt(x.price)} · ${x.itemIds.length} предметов</small></div><button class="small-btn" data-action="delete-custom-case" data-case="${esc(x.id)}">Удалить</button></div>`).join('') || '<p class="small">Пока нет кастомных кейсов.</p>';
+    const missions=collectorMissions().map(m=>{ const got=state.inventory.filter(m.filter).length, done=got>=m.need, claimed=(state.collectionRewards||[]).includes(m.id); return `<article class="mini-card ${claimed?'claimed':done?'ready':''}"><h3>${esc(m.title)}</h3><p>${esc(m.desc)}</p><div class="bp-bar"><span style="width:${clamp(got/m.need*100,0,100)}%"></span></div><small>${Math.min(got,m.need)} / ${m.need}</small><button class="btn ${done&&!claimed?'primary':''}" data-action="claim-mission" data-mission="${m.id}" ${done&&!claimed?'':'disabled'}>${claimed?'Получено':done?'Забрать':'В процессе'}</button></article>`; }).join('');
+    const events=seasonalEventDefs().map(ev=>{ const got=eventProgress(ev), done=got>=ev.need, key='season-event-'+ev.id, claimed=(state.collectionRewards||[]).includes(key); return `<article class="mini-card ${claimed?'claimed':done?'ready':''}"><h3>${esc(ev.title)}</h3><p>${esc(ev.desc)}</p><div class="bp-bar"><span style="width:${clamp(got/ev.need*100,0,100)}%"></span></div><small>${got}/${ev.need}</small><button class="btn ${done&&!claimed?'primary':''}" data-action="claim-season-event" data-event="${ev.id}" ${done&&!claimed?'':'disabled'}>${claimed?'Получено':done?'Забрать':'В процессе'}</button></article>`; }).join('');
+    root.insertAdjacentHTML('afterbegin', `<section class="panel block xp-panel"><div class="head"><div><h2>Уровень аккаунта</h2><p>XP начисляется за открытия, дропы, покупки, ивенты, сапёр и прогресс.</p></div><div class="rank-badge">LVL ${lvl.level}</div></div><div class="bp-bar"><span style="width:${lvl.pct}%"></span></div><small>${lvl.current}/${lvl.need} XP · сезонные жетоны: <b>${toNum(state.seasonTokens,0)} ${SEASON_TOKEN_NAME}</b></small></section>`);
+    root.insertAdjacentHTML('beforeend', `<section class="block"><div class="head"><div><h2>Миссии коллекционера</h2><p>Длинные цепочки для редких категорий инвентаря.</p></div></div><div class="grid cards-3">${missions}</div></section><section class="block"><div class="head"><div><h2>Сезонные ивенты</h2><p>Dragon Week, Sticker Fest и Knife Hunt работают без сервера.</p></div></div><div class="grid cards-3">${events}</div></section><section class="panel block"><div class="head"><div><h2>Инвестиции</h2><p>Цены меняются каждый день. Продажа учитывает комиссию ${Math.round(SELL_COMMISSION*100)}%.</p></div></div><div class="grid cards-5">${invHtml}</div></section><section class="panel block"><div class="head"><div><h2>Сезонный магазин</h2><p>Баланс жетонов: <b>${toNum(state.seasonTokens,0)} ${SEASON_TOKEN_NAME}</b></p></div></div><div class="grid cards-5">${storeHtml}</div></section><section class="panel block"><div class="head"><div><h2>Case Creator</h2><p>Создай свой кейс — он появится на странице кейсов в разделе «Мои кейсы».</p></div></div><div class="creator-form"><input id="customCaseName" placeholder="Название кейса"><input id="customCasePrice" type="number" value="2500" min="200"><select id="customCaseMode"><option value="balanced">Balanced</option><option value="budget">Budget</option><option value="premium">Premium</option><option value="stickers">Sticker Case</option></select><select id="customCaseSize"><option value="12">12 предметов</option><option value="18" selected>18 предметов</option><option value="30">30 предметов</option></select><button class="btn primary" data-action="create-custom-case">Создать кейс</button></div><div class="tx-list">${cc}</div></section>`);
+  };
+  const oldRenderProfile = renderProfile;
+  renderProfile = function(){
+    const root = $('#profileRoot'); if(!root) return oldRenderProfile();
+    oldRenderProfile();
+    const lvl=accountLevel();
+    root.insertAdjacentHTML('afterbegin', `<section class="panel profile-head"><div class="profile-avatar">${esc(({classic:'✦',dragon:'🐉',major:'🏆',trader:'💼',knife:'🔪',sticker:'🏷️'}[state.avatar]||'✦'))}</div><div><span class="kicker">${esc(state.title||defaultTitle())}</span><h2>Уровень ${lvl.level}</h2><div class="bp-bar"><span style="width:${lvl.pct}%"></span></div><small>${lvl.current}/${lvl.need} XP · ${toNum(state.seasonTokens,0)} ${SEASON_TOKEN_NAME}</small></div></section><section class="panel block"><div class="head"><h2>Графики статистики</h2></div>${profileChartsHtml()}</section><section class="panel block"><div class="head"><h2>Кастомизация профиля</h2></div>${profileCosmeticsHtml()}</section>`);
+  };
+  document.addEventListener('click', e=>{
+    const btn=e.target.closest('[data-action]'); if(!btn) return;
+    const a=btn.dataset.action;
+    if(a==='buy-investment') return buyInvestment(btn.dataset.invest||'');
+    if(a==='sell-investment') return sellInvestment(btn.dataset.invest||'');
+    if(a==='buy-season-store') return buySeasonStore(btn.dataset.store||'');
+    if(a==='create-custom-case') return createCustomCase();
+    if(a==='delete-custom-case') return deleteCustomCase(btn.dataset.case||'');
+    if(a==='claim-mission') return claimMission(btn.dataset.mission||'');
+    if(a==='claim-season-event') return claimSeasonEvent(btn.dataset.event||'');
+    if(a==='set-avatar') return setAvatar(btn.dataset.avatar||'classic');
+    if(a==='set-title') return setTitle(btn.dataset.title||defaultTitle());
+    if(a==='toggle-favorite') return toggleInventoryFlag(btn.dataset.uid,'favorite');
+    if(a==='toggle-protect') return toggleInventoryFlag(btn.dataset.uid,'protected');
+  });
+  const oldRedeemPromo = redeemPromo;
+  redeemPromo = function(){
+    const input = $('#promoInput'); const code = normalizePromoCode(input && input.value);
+    if(!code) return toast('Введи промокод','bad');
+    const reward = PROMO_REWARDS[code] || PROMO_CODES[code];
+    if(!reward) return toast('Промокод не найден','bad');
+    state.usedPromos = Array.isArray(state.usedPromos) ? state.usedPromos : [];
+    if(state.usedPromos.includes(code)) return toast('Этот промокод уже активирован','warn');
+    state.usedPromos.push(code);
+    applyRewardObject(reward, `Промокод ${code}`);
+    if(input) input.value=''; save(); renderPromos();
+  };
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
