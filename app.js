@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '21.0.0';
+  const VERSION = '22.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -17,7 +17,7 @@
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
   const RUB_PER_USD = 92;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v20';
+  const PRICE_VERSION = 'market-rub-v22';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -372,7 +372,8 @@
       initMobileTapBridge();
       bindEvents();
       purgeOldCaches();
-      registerServiceWorker();
+      // v22: service worker отключён, чтобы телефон не держал старый JS/картинки.
+      // registerServiceWorker();
       seedLive();
       renderLive();
       setInterval(fakeLive, 4800);
@@ -1398,17 +1399,29 @@
   function initMobileTapBridge(){
     if(document.documentElement.dataset.tapBridge === '1') return;
     document.documentElement.dataset.tapBridge = '1';
-    const selector = '[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]';
+    const actionSelector = '[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]';
+    const linkSelector = 'a[href]';
     let lastTarget = null, lastAt = 0;
+    const getTouchTarget = e => {
+      let target = e.target && e.target.closest ? e.target.closest(actionSelector) : null;
+      if(target) return target;
+      try{
+        const t = e.changedTouches && e.changedTouches[0];
+        if(t){
+          const el = document.elementFromPoint(t.clientX, t.clientY);
+          if(el && el.closest) target = el.closest(actionSelector);
+        }
+      }catch(err){}
+      return target;
+    };
     const bridge = e => {
-      const target = e.target && e.target.closest ? e.target.closest(selector) : null;
+      const target = getTouchTarget(e);
       if(!target || target.disabled || target.getAttribute('aria-disabled') === 'true') return;
-      if(target.closest('.navlinks a')) return;
       const now = Date.now();
       if(lastTarget === target && now - lastAt < 420) return;
       lastTarget = target; lastAt = now;
       target.__tapBridgeAt = now;
-      e.preventDefault();
+      try{ e.preventDefault(); e.stopPropagation(); }catch(err){}
       const ev = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
       ev.__tapBridge = true;
       target.dispatchEvent(ev);
@@ -1419,11 +1432,21 @@
         if(e.pointerType === 'touch' || e.pointerType === 'pen') bridge(e);
       }, {passive:false, capture:true});
     }
-    // iOS иногда оставляет невидимый слой меню после перехода назад. Снимаем блокировку при касании вне открытого меню.
+    // Страховка для обычных ссылок-кнопок на iOS: если Safari не отдаёт click, переходим вручную.
+    document.addEventListener('touchend', e => {
+      const a = e.target && e.target.closest ? e.target.closest(linkSelector) : null;
+      if(!a || a.closest('[data-action]') || a.hasAttribute('download')) return;
+      const href = a.getAttribute('href') || '';
+      if(!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+      if(a.target && a.target !== '_self') return;
+      if(!/\.html($|[?#])/.test(href) && !/^[a-z0-9_-]+\.html/i.test(href)) return;
+      try{ e.preventDefault(); document.body.classList.remove('nav-open'); location.href = href; }catch(err){}
+    }, {passive:false, capture:true});
     document.addEventListener('touchstart', e => {
       if(document.body.classList.contains('nav-open')) return;
       const b = document.querySelector('.menu-backdrop');
       if(b) b.style.pointerEvents = 'none';
+      $$('.modal:not(.show)').forEach(m => { m.style.pointerEvents = 'none'; });
     }, {passive:true});
   }
 
@@ -1431,14 +1454,7 @@
   function initInstallPrompt(){
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $$('.js-install-ready').forEach(x=>x.textContent='Готово к установке'); });
   }
-  function registerServiceWorker(){
-    // v11: safe network-first/no-cache SW only for installability and iOS/Android standalone mode.
-    // It does NOT cache app.js/html, so GitHub Pages updates do not break balance/inventory.
-    if(!('serviceWorker' in navigator) || location.protocol === 'file:') return;
-    navigator.serviceWorker.register('./sw.js?v=' + VERSION, {updateViaCache:'none'}).then(reg => {
-      try{ reg.update(); }catch(e){}
-    }).catch(()=>{});
-  }
+  function registerServiceWorker(){ return; }
   async function installPWA(){
     if(deferredInstallPrompt){
       deferredInstallPrompt.prompt();
@@ -1460,7 +1476,7 @@
     const root = $('#installRoot'); if(!root) return;
     const ios = isIOSDevice();
     const standalone = isStandaloneMode();
-    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v21:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
+    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v22:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }

@@ -66,3 +66,18 @@ button,a,.btn,.small-btn,[data-action],[data-open-case],[data-view-case],[data-s
 .navlinks{pointer-events:auto;}
 @media(max-width:1100px){body:not(.nav-open) .navlinks{pointer-events:none!important;}body.nav-open .navlinks{pointer-events:auto!important;}.topbar{isolation:isolate}.wallet,.menu-toggle,.brand{position:relative;z-index:95}.live-wrap{position:relative;z-index:1}}
 @supports(-webkit-touch-callout:none){button,.btn,.small-btn,a{min-height:44px}.modal.show .modal-card{pointer-events:auto!important}.case-card,.item-card{cursor:pointer}}
+
+
+/* v22 hard mobile/hero fix */
+html,body{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+button,a,.btn,.small-btn,[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item]{touch-action:manipulation;cursor:pointer;}
+.menu-backdrop{pointer-events:none!important;display:none!important;}
+.nav-open .menu-backdrop{display:block!important;pointer-events:auto!important;}
+.modal{pointer-events:none!important;}
+.modal.show{pointer-events:auto!important;}
+.hero-showcase-v22{min-height:430px;display:grid;place-items:center;padding:0;overflow:hidden;}
+.hero-showcase-v22 .hero-skins-img{width:100%;height:100%;min-height:430px;object-fit:cover;display:block;filter:drop-shadow(0 30px 55px rgba(0,0,0,.38));}
+.hero-showcase-v22:after,.hero-showcase-v22 .case-glow,.hero-showcase-v22 .orbit-case,.hero-showcase-v22 .weapon-float{display:none!important;}
+@media(max-width:1100px){.hero-showcase-v22{min-height:340px}.hero-showcase-v22 .hero-skins-img{min-height:340px;object-position:center}}
+@media(max-width:620px){.hero-showcase-v22{min-height:270px;border-radius:22px}.hero-showcase-v22 .hero-skins-img{min-height:270px;object-fit:cover;object-position:center}.hero-actions .btn{width:100%}}
+@media(max-width:430px){.hero-showcase-v22{min-height:238px}.hero-showcase-v22 .hero-skins-img{min-height:238px}}

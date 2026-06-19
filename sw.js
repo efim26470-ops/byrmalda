@@ -1,13 +1,4 @@
-const CACHE_NAME = 'cs2-case-lab-v20-network-first';
+const VERSION='22.0.0';
 self.addEventListener('install', event => { self.skipWaiting(); });
-self.addEventListener('activate', event => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(k => /cs2-case-lab/i.test(k) && k !== CACHE_NAME).map(k => caches.delete(k)));
-    await self.clients.claim();
-  })());
-});
-self.addEventListener('fetch', event => {
-  if(event.request.method !== 'GET') return;
-  event.respondWith(fetch(event.request, {cache:'no-store'}).catch(() => caches.match(event.request)));
-});
+self.addEventListener('activate', event => { event.waitUntil((async()=>{ const keys = await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); await self.clients.claim(); })()); });
+self.addEventListener('fetch', event => { return; });
