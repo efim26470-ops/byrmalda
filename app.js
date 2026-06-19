@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '20.0.0';
+  const VERSION = '21.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -22,7 +22,7 @@
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
   const PROMO_CODES = Object.freeze({
-    WELCOME20: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
+    WELCOME21: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
     KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 50000, TEST100K: 100000
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
@@ -363,29 +363,46 @@
   }
 
   async function boot(){
-    addToasts();
-    initIOSViewport();
-    initScrollFix();
-    initResponsiveMenu();
-    initInstallPrompt();
-    purgeOldCaches();
-    registerServiceWorker();
-    state = await loadStateAsync();
-    bootLoaded = true;
-    window.addEventListener('pagehide', () => { try{ save(); }catch(e){} });
-    window.addEventListener('beforeunload', () => { try{ save(); }catch(e){} });
-    window.addEventListener('storage', e => { if(e.key === LS_KEY || e.key === BACKUP_KEY){ state = loadState(); renderGlobals(); } });
-    renderGlobals();
-    save();
-    bindEvents();
-    seedLive();
-    renderLive();
-    setInterval(fakeLive, 4800);
-    routeLoading();
-    catalog = await loadCatalog();
-    seedLive(true);
-    renderLive();
-    route();
+    try{
+      addToasts();
+      initIOSViewport();
+      initScrollFix();
+      initResponsiveMenu();
+      initInstallPrompt();
+      initMobileTapBridge();
+      bindEvents();
+      purgeOldCaches();
+      registerServiceWorker();
+      seedLive();
+      renderLive();
+      setInterval(fakeLive, 4800);
+      routeLoading();
+      try{ state = await promiseTimeout(loadStateAsync(), 900, loadState(false)); }
+      catch(e){ console.warn('save load fallback', e); state = loadState(false); }
+      bootLoaded = true;
+      window.addEventListener('pagehide', () => { try{ save(); }catch(e){} });
+      window.addEventListener('beforeunload', () => { try{ save(); }catch(e){} });
+      window.addEventListener('storage', e => { if(e.key === LS_KEY || e.key === BACKUP_KEY){ state = loadState(); renderGlobals(); } });
+      renderGlobals();
+      save();
+      catalog = await promiseTimeout(loadCatalog(), 6500, buildOfflineCatalog());
+      seedLive(true);
+      renderLive();
+      route();
+    }catch(err){
+      console.error('Boot failed, emergency mode:', err);
+      try{ addToasts(); }catch(e){}
+      try{ bindEvents(); initMobileTapBridge(); }catch(e){}
+      try{ catalog = buildOfflineCatalog(); route(); renderGlobals(); }catch(e){}
+      try{ toast('Включён аварийный мобильный режим. Обнови страницу, если интерфейс загрузился не полностью.','warn'); }catch(e){}
+    }
+  }
+  function promiseTimeout(p, ms, fallback){
+    return new Promise(resolve => {
+      let done = false;
+      const t = setTimeout(() => { if(!done){ done = true; resolve(fallback); } }, ms);
+      Promise.resolve(p).then(v => { if(!done){ done = true; clearTimeout(t); resolve(v); } }).catch(() => { if(!done){ done = true; clearTimeout(t); resolve(fallback); } });
+    });
   }
   function routeLoading(){ const r = $('[data-route-root]'); if(r) r.innerHTML = '<div class="empty">Загружаю данные...</div>'; }
 
@@ -752,9 +769,12 @@
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9а-яё]+/gi,'-').replace(/^-|-$/g,''); }
 
   function bindEvents(){
+    if(document.documentElement.dataset.bound === '1') return;
+    document.documentElement.dataset.bound = '1';
     document.addEventListener('click', e => {
       const btn = e.target.closest('[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]');
       if(!btn) return;
+      if(btn.__tapBridgeAt && Date.now() - btn.__tapBridgeAt < 650 && !e.__tapBridge){ e.preventDefault(); return; }
       if(btn.matches('[data-close-modal]')) return closeModal(btn.closest('.modal'));
       if(btn.dataset.openCase) return openCaseModal(btn.dataset.openCase, true);
       if(btn.dataset.viewCase) return openCaseModal(btn.dataset.viewCase, false);
@@ -1317,9 +1337,20 @@
     }
     const close = () => { document.body.classList.remove('nav-open'); btn.setAttribute('aria-expanded','false'); };
     const open = () => { document.body.classList.add('nav-open'); btn.setAttribute('aria-expanded','true'); };
-    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); document.body.classList.contains('nav-open') ? close() : open(); });
-    if(backdrop) backdrop.addEventListener('click', close);
+    let lastMenuTap = 0;
+    const toggleMenu = e => {
+      if(e){ e.preventDefault(); e.stopPropagation(); }
+      const now = Date.now();
+      if(now - lastMenuTap < 260) return;
+      lastMenuTap = now;
+      document.body.classList.contains('nav-open') ? close() : open();
+    };
+    btn.addEventListener('click', toggleMenu);
+    btn.addEventListener('pointerup', toggleMenu, {passive:false});
+    btn.addEventListener('touchend', toggleMenu, {passive:false});
+    if(backdrop){ backdrop.addEventListener('click', close); backdrop.addEventListener('touchend', e => { e.preventDefault(); close(); }, {passive:false}); }
     nav.addEventListener('click', e => { if(e.target.closest('a')) close(); });
+    nav.addEventListener('touchend', e => { if(e.target.closest('a')) close(); }, {passive:true});
     document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
     window.addEventListener('resize', () => { if(innerWidth > 1100) close(); }, {passive:true});
   }
@@ -1364,6 +1395,38 @@
     try{ document.addEventListener('touchstart', function(){}, {passive:true}); }catch(e){}
   }
 
+  function initMobileTapBridge(){
+    if(document.documentElement.dataset.tapBridge === '1') return;
+    document.documentElement.dataset.tapBridge = '1';
+    const selector = '[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]';
+    let lastTarget = null, lastAt = 0;
+    const bridge = e => {
+      const target = e.target && e.target.closest ? e.target.closest(selector) : null;
+      if(!target || target.disabled || target.getAttribute('aria-disabled') === 'true') return;
+      if(target.closest('.navlinks a')) return;
+      const now = Date.now();
+      if(lastTarget === target && now - lastAt < 420) return;
+      lastTarget = target; lastAt = now;
+      target.__tapBridgeAt = now;
+      e.preventDefault();
+      const ev = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
+      ev.__tapBridge = true;
+      target.dispatchEvent(ev);
+    };
+    document.addEventListener('touchend', bridge, {passive:false, capture:true});
+    if(window.PointerEvent){
+      document.addEventListener('pointerup', e => {
+        if(e.pointerType === 'touch' || e.pointerType === 'pen') bridge(e);
+      }, {passive:false, capture:true});
+    }
+    // iOS иногда оставляет невидимый слой меню после перехода назад. Снимаем блокировку при касании вне открытого меню.
+    document.addEventListener('touchstart', e => {
+      if(document.body.classList.contains('nav-open')) return;
+      const b = document.querySelector('.menu-backdrop');
+      if(b) b.style.pointerEvents = 'none';
+    }, {passive:true});
+  }
+
   let deferredInstallPrompt = null;
   function initInstallPrompt(){
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $$('.js-install-ready').forEach(x=>x.textContent='Готово к установке'); });
@@ -1397,7 +1460,7 @@
     const root = $('#installRoot'); if(!root) return;
     const ios = isIOSDevice();
     const standalone = isStandaloneMode();
-    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v11:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
+    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v21:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
@@ -1405,7 +1468,7 @@
     const root = $('#promosRoot'); if(!root) return;
     const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
     const totalCodes = Object.keys(PROMO_CODES).length;
-    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME20</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME21</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
   }
   function redeemPromo(){
     const input = $('#promoInput');

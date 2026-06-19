@@ -55,3 +55,14 @@ main,.section,.container,.wide{overflow-y:visible;}
 
 /* v20 inventory + hero cleanup */
 .inventory-topline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:stretch;margin-bottom:14px}.inv-total-card{border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.04));padding:18px 20px;box-shadow:var(--shadow)}.inv-total-card small{display:block;color:#a8b3c7;font-weight:900;margin-bottom:6px}.inv-total-card b{display:block;color:#ffd166;font-size:30px;line-height:1.05}.inv-total-card span{display:block;color:#a8b3c7;margin-top:8px}.inv-total-actions{display:flex;gap:10px;align-items:stretch}.inv-total-actions .btn,.inv-total-actions .small-btn{min-height:100%;white-space:nowrap}.inv-visible-summary{margin-top:0;margin-bottom:16px}.hero-showcase .big-case{border-radius:28px}.hero-showcase .weapon-float img{border-radius:14px}@media(max-width:720px){.inventory-topline{grid-template-columns:1fr}.inv-total-actions{display:grid;grid-template-columns:1fr 1fr}.inv-total-card b{font-size:26px}}@media(max-width:430px){.inv-total-actions{grid-template-columns:1fr}.inv-total-card{padding:16px}.inv-total-card b{font-size:24px}}
+
+/* v21 mobile tap fix */
+html,body{touch-action:pan-y!important;}
+button,a,.btn,.small-btn,[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]{pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:rgba(255,122,24,.22);cursor:pointer;}
+.menu-backdrop{pointer-events:none!important;}
+.nav-open .menu-backdrop{pointer-events:auto!important;}
+.modal{pointer-events:none!important;}
+.modal.show{pointer-events:auto!important;}
+.navlinks{pointer-events:auto;}
+@media(max-width:1100px){body:not(.nav-open) .navlinks{pointer-events:none!important;}body.nav-open .navlinks{pointer-events:auto!important;}.topbar{isolation:isolate}.wallet,.menu-toggle,.brand{position:relative;z-index:95}.live-wrap{position:relative;z-index:1}}
+@supports(-webkit-touch-callout:none){button,.btn,.small-btn,a{min-height:44px}.modal.show .modal-card{pointer-events:auto!important}.case-card,.item-card{cursor:pointer}}
