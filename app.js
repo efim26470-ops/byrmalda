@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.11.0';
+  const VERSION = '31.12.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -64,6 +64,16 @@
   const MARKET_SLOTS = 18;
   const TEAM_EVENT_NEED = 12;
   const TEAM_THEMES = Object.freeze(['vitality','falcons','fnatic','9z','spirit','vp','cloud9','navi','faze','parivision']);
+  const QUICK_MODE_LINKS = Object.freeze([
+    {href:'wheel.html', icon:'🎡', label:'Колесо'},
+    {href:'battle-pass.html', icon:'🏆', label:'Battle-pass'},
+    {href:'seasonal-pass.html', icon:'⏳', label:'Season pass', seasonal:true},
+    {href:'quests.html', icon:'📈', label:'Развитие'},
+    {href:'promo.html', icon:'🎁', label:'Промо'},
+    {href:'ads.html', icon:'📣', label:'Реклама'},
+    {href:'install.html', icon:'⬇', label:'Скачать'}
+  ]);
+  const QUICK_MODE_HREFS = Object.freeze(QUICK_MODE_LINKS.map(x => x.href));
   const PROMO_CODES = Object.freeze({
     WELCOME30: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
     KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 20000, TEST100K: 15000,
@@ -560,6 +570,7 @@
       applySavedTheme();
       addToasts();
       initThemeSwitcher();
+      initQuickModeDock();
       initIOSViewport();
       initScrollFix();
       initResponsiveMenu();
@@ -1146,6 +1157,7 @@
   function setActiveNav(){
     const file = location.pathname.split('/').pop() || 'index.html';
     $$('.navlinks a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === file));
+    $$('.quick-mode-link').forEach(a => a.classList.toggle('active', a.getAttribute('href') === file));
   }
   function renderGlobals(){
     state = normalizeState(state);
@@ -1214,6 +1226,18 @@
     document.addEventListener('click', e => { if(!wrap.contains(e.target)) close(); });
     document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
     applySavedTheme();
+  }
+
+  function initQuickModeDock(){
+    const nav = $('.navlinks');
+    if(!nav) return;
+    QUICK_MODE_HREFS.forEach(href => {
+      $$(`a[href="${href}"]`, nav).forEach(a => a.classList.add('nav-secondary'));
+    });
+    if($('.quick-mode-dock')) return;
+    const file = location.pathname.split('/').pop() || 'index.html';
+    const links = QUICK_MODE_LINKS.map(x => `<a class="quick-mode-link ${file===x.href?'active':''} ${x.seasonal?'js-seasonal-pass-link':''}" href="${esc(x.href)}" title="${esc(x.label)}"><span>${esc(x.icon)}</span><b>${esc(x.label)}</b></a>`).join('');
+    document.body.insertAdjacentHTML('afterbegin', `<aside class="quick-mode-dock" aria-label="Быстрые режимы"><div class="quick-mode-title">Режимы</div>${links}</aside>`);
   }
   function addToasts(){ if(!$('.toast-wrap')) document.body.insertAdjacentHTML('beforeend','<div class="toast-wrap"></div>'); }
   function toast(text,type=''){
