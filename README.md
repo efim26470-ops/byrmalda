@@ -34,3 +34,14 @@
 - Добавлены интерактивные рекламные карточки внешних проектов.
 - За переход по каждому ресурсу один раз в день начисляется случайный скин или баланс до 5 000 ₽.
 - Добавлены новые промокоды.
+
+
+## v31.10
+- Theme preload fixed on every HTML page so the chosen theme applies immediately site-wide.
+- Battle-pass and Season pass no longer use bonus-wheel missions; wheel tasks were replaced with mines/cases/upgrades/contracts objectives.
+
+
+## v31.11
+- Добавлена вкладка «Развитие»: ежедневные контракты, коллекции, достижения, внутренний маркет, ранги, командные ивенты тем и крафт наклеек/патчей.
+- Турнир/таблица рекордов не добавлялись по запросу.
+- Версия кэша: 31.11.0.
