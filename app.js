@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '18.0.0';
+  const VERSION = '19.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -17,12 +17,12 @@
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
   const RUB_PER_USD = 92;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'rub-v14';
+  const PRICE_VERSION = 'market-rub-v19';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
   const PROMO_CODES = Object.freeze({
-    WELCOME13: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
+    WELCOME19: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
     KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 50000, TEST100K: 100000
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
@@ -569,7 +569,7 @@
     const c = color || '#ff7a18';
     const c2 = c === '#22c55e' ? '#064e3b' : c === '#ef4444' ? '#7f1d1d' : c === '#4b69ff' ? '#1e3a8a' : c === '#8b5cf6' ? '#4c1d95' : c === '#ec4899' ? '#831843' : '#111827';
     const icon = /knife/i.test(name) ? '★' : /glove/i.test(name) ? '✋' : /sticker|capsule|tournament/i.test(name) ? '◆' : /agent/i.test(name) ? '♟' : /charm|keychain/i.test(name) ? '✦' : /patch/i.test(name) ? '⬢' : /green/i.test(name) ? 'GREEN' : /red|covert/i.test(name) ? 'RED' : /blue|mil/i.test(name) ? 'BLUE' : /pink|classified/i.test(name) ? 'PINK' : 'CS2';
-    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v160c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
+    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v190c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
   }
   function createSpecialCase(idv,name,rar,pool,price,text){
     pool = (pool || []).filter(Boolean).slice(0,240);
@@ -579,7 +579,6 @@
   }
   function withHiddenOdds(c, idx=0){
     const profiles = [
-      // Убыточные, нейтральные и более щедрые профили. Пользователю они не показываются.
       {profitOdds:.16,jackpot:.07,cheap:.55,priceMult:1.18},
       {profitOdds:.26,jackpot:.12,cheap:.38,priceMult:1.05},
       {profitOdds:.38,jackpot:.20,cheap:.24,priceMult:1.00},
@@ -617,25 +616,130 @@
   function applySteamLikePrice(it){
     const name = String(it.name || '');
     const lower = name.toLowerCase();
-    const known = knownSteamUSD(lower);
-    const baseMap = { 'Consumer Grade':0.05,'Base Grade':0.06,'Industrial Grade':0.18,'Mil-Spec Grade':0.55,'Restricted':2.2,'Classified':8.5,'Covert':24,'Contraband':6500,'Exceedingly Rare':360,'Extraordinary':290,'High Grade':0.35,'Remarkable':1.4,'Exotic':5.5,'Distinguished':2.7,'Exceptional':6.8,'Superior':14,'Master':32,'Master Agent':32,'Superior Agent':14,'Exceptional Agent':6.8,'Distinguished Agent':2.7 };
-    let usd = known || baseMap[it.rarity] || 1;
-    if(it.category === 'sticker') usd *= /gold|holo|lenticular|foil/i.test(name) ? 2.6 : 1;
-    if(it.category === 'patch') usd *= 0.85;
-    if(it.category === 'keychain') usd *= 1.15;
-    if(it.category === 'collectible') usd *= 0.75;
-    if(/dragon lore|wild lotus|gungnir|howl|fire serpent|medusa|hydroponic|poseidon|desert hydra/i.test(name)) usd *= 1.8;
-    const noise = .72 + stableNoise(name) * .72;
-    const value = Math.max(5, Math.round(usd * RUB_PER_USD * noise));
-    return Object.assign({}, it, {value, steamUsd:Math.round(usd*noise*100)/100, steamRub:value, currency:CURRENCY, priceVersion:PRICE_VERSION, weight: it.weight || rarityWeight[it.rarity] || 7});
+    const knownRub = knownMarketRub(lower);
+    const rarity = it.rarity || 'Mil-Spec Grade';
+    const category = String(it.category || 'skin').toLowerCase();
+    const baseRub = {
+      'Consumer Grade': 8, 'Base Grade': 10, 'Industrial Grade': 28, 'Mil-Spec Grade': 95,
+      'Restricted': 330, 'Classified': 1250, 'Covert': 4300, 'Contraband': 520000,
+      'Exceedingly Rare': 26000, 'Extraordinary': 22000,
+      'High Grade': 45, 'Remarkable': 190, 'Exotic': 820,
+      'Distinguished': 420, 'Exceptional': 950, 'Superior': 2100, 'Master': 5200,
+      'Master Agent': 5200, 'Superior Agent': 2100, 'Exceptional Agent': 950, 'Distinguished Agent': 420
+    };
+    let rub = knownRub || baseRub[rarity] || 120;
+
+    if(!knownRub){
+      const premiumWeapon = /ak-47|awp|m4a1-s|m4a4|desert eagle|usp-s/i.test(name) ? 1.55 : 1;
+      const midWeapon = /glock|mac-10|mp9|ssg 08|famas|galil|p250|tec-9/i.test(name) ? 1.12 : 1;
+      const collectorPattern = /printstream|asiimov|neo-noir|hyper beast|bloodsport|empress|vulcan|redline|case hardened|fade|doppler|slaughter|crimson web|gold arabesque|welcome to the jungle|hot rod|icarus fell|blue phosphor/i.test(name) ? 2.1 : 1;
+      rub *= premiumWeapon * midWeapon * collectorPattern;
+
+      if(name.startsWith('★') || /knife|bayonet|karambit|butterfly|m9|talon|kukri|skeleton|nomad|stiletto|ursus|paracord|survival|classic|flip|gut|navaja|falchion|shadow daggers/i.test(name)){
+        rub = knifeRub(lower);
+      }
+      if(/gloves/i.test(name)){
+        rub = glovesRub(lower);
+      }
+      if(category === 'sticker'){
+        rub = stickerRub(lower, rarity);
+      }
+      if(category === 'patch'){
+        rub = patchRub(lower, rarity);
+      }
+      if(category === 'keychain'){
+        rub = keychainRub(lower, rarity);
+      }
+      if(category === 'agent'){
+        rub = agentRub(lower, rarity);
+      }
+      if(category === 'collectible'){
+        rub *= 0.75;
+      }
+    }
+
+    const noise = knownRub ? (0.94 + stableNoise(name) * 0.12) : (0.62 + stableNoise(name) * 0.86);
+    const value = Math.max(3, Math.round(rub * noise));
+    return Object.assign({}, it, {
+      value,
+      steamUsd: Math.round((value / RUB_PER_USD) * 100) / 100,
+      steamRub: value,
+      currency: CURRENCY,
+      priceVersion: PRICE_VERSION,
+      weight: it.weight || rarityWeight[rarity] || 7
+    });
   }
-  function knownSteamUSD(lower){
-    const m = [
-      ['dragon lore',9500],['howl',5600],['wild lotus',7100],['gungnir',8300],['fire serpent',980],['medusa',4100],['desert hydra',1750],['prince',2400],['poseidon',1350],['hydroponic',1800],['dlore',9500],
-      ['asiimov',58],['printstream',62],['vulcan',185],['kill confirmed',95],['neo-noir',31],['redline',23],['head shot',29],['the empress',78],['bloodsport',66],['bullet queen',38],['case hardened',110],['doppler',620],['gamma doppler',760],['fade',720],['slaughter',510],['crimson web',450],['vice',1400],['pandora',5300],['king snake',1150],['imperial plaid',820]
+  function knownMarketRub(lower){
+    const exact = [
+      ['awp | dragon lore', 920000], ['m4a4 | howl', 560000], ['ak-47 | wild lotus', 760000], ['awp | gungnir', 820000], ['awp | medusa', 360000],
+      ['awp | desert hydra', 170000], ['ak-47 | fire serpent', 82000], ['m4a1-s | knight', 150000], ['ak-47 | hydroponic', 155000], ['m4a4 | poseidon', 115000],
+      ['ak-47 | gold arabesque', 135000], ['m4a1-s | hot rod', 90000], ['m4a1-s | blue phosphor', 72000], ['awp | the prince', 210000],
+      ['ak-47 | vulcan', 18000], ['ak-47 | redline', 2600], ['ak-47 | head shot', 3600], ['ak-47 | the empress', 6400], ['ak-47 | bloodsport', 5900],
+      ['awp | asiimov', 11200], ['awp | hyper beast', 6900], ['awp | neo-noir', 3100], ['awp | duality', 950], ['awp | fever dream', 650],
+      ['m4a1-s | printstream', 8300], ['m4a1-s | decimator', 1700], ['m4a1-s | hyper beast', 3600], ['m4a4 | neo-noir', 2900],
+      ['desert eagle | printstream', 6200], ['desert eagle | ocean drive', 2300], ['usp-s | kill confirmed', 7600], ['usp-s | cortex', 850], ['usp-s | printstream', 4600],
+      ['glock-18 | water elemental', 900], ['glock-18 | bullet queen', 1800], ['p250 | asiimov', 760], ['mp9 | food chain', 680], ['mac-10 | neon rider', 1300],
+      ['p90 | death grip', 360], ['ssg 08 | fever dream', 380], ['ump-45 | primal saber', 640], ['famas | mecha industries', 760], ['galil ar | chatterbox', 520],
+      ['sticker | crown', 42000], ['katowice 2014', 28000], ['ibuyPower', 900000], ['titan | katowice 2014', 520000], ['vox eminor | katowice 2014', 90000]
     ];
-    const f = m.find(([k])=>lower.includes(k));
-    return f ? f[1] : 0;
+    const found = exact.find(([key]) => lower.includes(String(key).toLowerCase()));
+    return found ? found[1] : 0;
+  }
+  function knifeRub(lower){
+    let rub = 18000;
+    if(/butterfly/.test(lower)) rub = 95000;
+    else if(/karambit/.test(lower)) rub = 76000;
+    else if(/m9 bayonet/.test(lower)) rub = 56000;
+    else if(/talon/.test(lower)) rub = 39000;
+    else if(/skeleton/.test(lower)) rub = 42000;
+    else if(/bayonet/.test(lower)) rub = 31000;
+    else if(/kukri/.test(lower)) rub = 28000;
+    else if(/stiletto|nomad|ursus|classic/.test(lower)) rub = 23000;
+    else if(/flip|falchion/.test(lower)) rub = 16000;
+    else if(/gut|navaja|shadow daggers/.test(lower)) rub = 9500;
+    if(/emerald|sapphire|ruby|black pearl/.test(lower)) rub *= 2.9;
+    else if(/gamma doppler/.test(lower)) rub *= 1.75;
+    else if(/doppler|fade/.test(lower)) rub *= 1.45;
+    else if(/slaughter|marble fade|tiger tooth/.test(lower)) rub *= 1.25;
+    else if(/crimson web|case hardened/.test(lower)) rub *= 1.18;
+    return rub;
+  }
+  function glovesRub(lower){
+    let rub = 18000;
+    if(/pandora/.test(lower)) rub = 260000;
+    else if(/vice/.test(lower)) rub = 145000;
+    else if(/hedge maze|superconductor/.test(lower)) rub = 120000;
+    else if(/king snake/.test(lower)) rub = 56000;
+    else if(/imperial plaid/.test(lower)) rub = 42000;
+    else if(/sport gloves/.test(lower)) rub = 52000;
+    else if(/specialist gloves/.test(lower)) rub = 36000;
+    else if(/driver gloves/.test(lower)) rub = 24000;
+    else if(/broken fang|hydra|bloodhound/.test(lower)) rub = 11500;
+    if(/factory new|minimal wear/.test(lower)) rub *= 1.35;
+    return rub;
+  }
+  function stickerRub(lower, rarity){
+    let rub = {'High Grade':35,'Remarkable':220,'Exotic':780,'Extraordinary':3600}[rarity] || 80;
+    if(/gold/.test(lower)) rub *= 8.5;
+    if(/holo|lenticular|foil/.test(lower)) rub *= 2.6;
+    if(/katowice 2014/.test(lower)) rub *= 120;
+    if(/copenhagen|shanghai|austin|paris|antwerp|stockholm|rio/.test(lower)) rub *= 1.15;
+    return rub;
+  }
+  function patchRub(lower, rarity){
+    let rub = {'High Grade':30,'Remarkable':130,'Exotic':550,'Extraordinary':1800}[rarity] || 70;
+    if(/gold|bravo|phoenix|howl/.test(lower)) rub *= 2.2;
+    return rub;
+  }
+  function keychainRub(lower, rarity){
+    let rub = {'High Grade':55,'Remarkable':180,'Exotic':620,'Extraordinary':1900}[rarity] || 110;
+    if(/karat|diamond|hot hands|weapon/.test(lower)) rub *= 1.8;
+    return rub;
+  }
+  function agentRub(lower, rarity){
+    let rub = {'Distinguished':320,'Exceptional':850,'Superior':1850,'Master':5200,'Master Agent':5200}[rarity] || 750;
+    if(/darryl|number k|ava|miami|bloody/.test(lower)) rub *= 1.75;
+    return rub;
   }
   function stableNoise(str){
     let h=2166136261; str=String(str||'');
@@ -645,10 +749,10 @@
   function calcPrice(items, idx, kind='case'){
     if(!items.length) return 300;
     const avg = weightedAverageValue(items);
-    const mult = kind === 'collection' ? .44 : kind === 'special' ? .66 : .50;
-    const spread = [55, 90, 140, 220, 360, 650, 1100, 1900, 3200][idx % 9];
-    const raw = avg * mult + spread + idx * 7;
-    return clamp(Math.round(raw), kind === 'special' ? 900 : 45, kind === 'special' ? 18000 : 9000);
+    const mult = kind === 'collection' ? .34 : kind === 'special' ? .42 : .36;
+    const spread = [45, 85, 150, 260, 480, 850, 1500, 2800, 5200][idx % 9];
+    const raw = avg * mult + spread + idx * 9;
+    return clamp(Math.round(raw), kind === 'special' ? 350 : 35, kind === 'special' ? 65000 : 14000);
   }
   function weightedAverageValue(items){
     const sumW = items.reduce((s,x)=>s+(rarityWeight[x.rarity]||x.weight||6),0) || 1;
@@ -809,7 +913,7 @@
       ['Турнирные наклейки', catalog.cases.filter(c=>/^stickers-/.test(c.id))],
       ['Агенты, брелоки, нашивки', catalog.cases.filter(c=>/^(agents|charms|patches|collectibles)-/.test(c.id))]
     ];
-    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> вернул классическую витрину кейсов и старый визуальный стиль для официальных/коллекционных кейсов. Новые функции сохранены: x3/x5/x10, быстрое открытие, промокоды, quality-пулы, стикеры, агенты, брелоки и нашивки.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
+    root.innerHTML = `<div class="notice"><b>Каталог обновлён:</b> классические CS2-кейсы, коллекции, quality-пулы, стикеры, агенты, брелоки и нашивки. Доступны x3/x5/x10 и быстрое открытие.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
   }
   function openCaseModal(caseId, autoSpin){
     const c = catalog.cases.find(x => x.id === caseId);
@@ -844,7 +948,6 @@
     if(ratio < .55) w *= (1 + odds.cheap);
     if(ratio < .25) w *= (1 + odds.cheap * 0.8);
     if(c && c.kind === 'special') w *= ratio >= 1 ? 0.76 : 1.12;
-    // микрошум на каждый ролл делает кейсы менее предсказуемыми, но сохраняет профиль окупа
     w *= rnd(.86, 1.18);
     return w;
   }
@@ -1296,7 +1399,7 @@
     const root = $('#promosRoot'); if(!root) return;
     const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
     const totalCodes = Object.keys(PROMO_CODES).length;
-    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME13</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME19</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
   }
   function redeemPromo(){
     const input = $('#promoInput');
