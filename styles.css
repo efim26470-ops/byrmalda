@@ -98,3 +98,19 @@ button,a,.btn,.small-btn,[data-action],[data-open-case],[data-view-case],[data-s
 @media(max-width:1100px){.hero-showcase-clean{min-height:auto;grid-template-columns:1fr 1fr;padding:18px!important}.hero-skin-card img{height:120px}.hero-skin-card.ak img{height:132px}.hero-skin-card strong{font-size:16px}}
 @media(max-width:620px){.hero-showcase-clean{grid-template-columns:1fr;gap:10px;padding:12px!important;border-radius:22px}.hero-skin-card{border-radius:18px;padding:10px;min-height:120px;grid-template-columns:44% 1fr;grid-template-rows:1fr auto;align-items:center;column-gap:10px}.hero-skin-card.ak{grid-column:auto}.hero-skin-card img,.hero-skin-card.ak img{grid-row:1/3;height:88px;max-height:88px}.hero-skin-card strong{font-size:14px;white-space:normal}.hero-skin-card span{font-size:11px}.hero-showcase{min-height:auto!important}}
 @media(max-width:390px){.hero-skin-card img,.hero-skin-card.ak img{height:76px}.hero-skin-card strong{font-size:13px}}
+
+
+/* v25: real hero images + mobile click safety */
+.hero-showcase-clean{display:grid!important;grid-template-columns:1.25fr 1fr;grid-template-rows:1fr 1fr;gap:14px;padding:22px;min-height:430px;overflow:hidden;}
+.hero-skin-card{position:relative;display:flex;flex-direction:column;justify-content:flex-end;min-height:170px;border:1px solid rgba(255,255,255,.14);border-bottom:4px solid var(--rar,#d32ce6);border-radius:24px;background:radial-gradient(circle at 50% 25%,rgba(255,255,255,.12),rgba(255,255,255,.035) 55%,rgba(0,0,0,.18));overflow:hidden;padding:16px;}
+.hero-skin-card.hero-skin-main{grid-row:1/3;}
+.hero-skin-card img{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:92%;height:66%;object-fit:contain;filter:drop-shadow(0 22px 22px rgba(0,0,0,.52));z-index:1;}
+.hero-skin-card strong,.hero-skin-card span{position:relative;z-index:2;text-shadow:0 3px 14px rgba(0,0,0,.7);}
+.hero-skin-card strong{font-size:22px;line-height:1.12;font-weight:950;}
+.hero-skin-card span{margin-top:5px;color:#c7d2fe;font-weight:900;}
+.hero-skin-card.ak{--rar:#d32ce6;}
+.hero-skin-card.awp{--rar:#eb4b4b;}
+.hero-skin-card.knife{--rar:#ffd700;}
+button,a,.btn,.small-btn,.case-card,.item-card,[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]{-webkit-user-select:none;user-select:none;touch-action:manipulation!important;cursor:pointer;}
+@media(max-width:620px){.hero-showcase-clean{grid-template-columns:1fr;grid-template-rows:none;gap:12px;min-height:0;padding:14px;}.hero-skin-card.hero-skin-main{grid-row:auto;}.hero-skin-card{min-height:178px;border-radius:20px;}.hero-skin-card img{height:64%;width:96%;top:42%;}.hero-skin-card strong{font-size:19px;}}
+@media(max-width:430px){.hero-skin-card{min-height:160px;}.hero-skin-card img{height:62%;}}

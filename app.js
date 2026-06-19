@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '23.0.0';
+  const VERSION = '25.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -387,6 +387,7 @@
       renderGlobals();
       save();
       catalog = await promiseTimeout(loadCatalog(), 6500, buildOfflineCatalog());
+      updateHeroShowcase();
       seedLive(true);
       renderLive();
       route();
@@ -394,7 +395,7 @@
       console.error('Boot failed, emergency mode:', err);
       try{ addToasts(); }catch(e){}
       try{ bindEvents(); initMobileTapBridge(); }catch(e){}
-      try{ catalog = buildOfflineCatalog(); route(); renderGlobals(); }catch(e){}
+      try{ catalog = buildOfflineCatalog(); updateHeroShowcase(); route(); renderGlobals(); }catch(e){}
       try{ toast('Включён аварийный мобильный режим. Обнови страницу, если интерфейс загрузился не полностью.','warn'); }catch(e){}
     }
   }
@@ -772,10 +773,16 @@
   function bindEvents(){
     if(document.documentElement.dataset.bound === '1') return;
     document.documentElement.dataset.bound = '1';
-    document.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]');
-      if(!btn) return;
-      if(btn.__tapBridgeAt && Date.now() - btn.__tapBridgeAt < 650 && !e.__tapBridge){ e.preventDefault(); return; }
+    const selector = '[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]';
+    let lastTarget = null;
+    let lastAt = 0;
+    function activate(btn, e){
+      if(!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return;
+      const now = Date.now();
+      if(lastTarget === btn && now - lastAt < 380) return;
+      lastTarget = btn;
+      lastAt = now;
+      try{ if(e){ e.preventDefault(); e.stopPropagation(); } }catch(err){}
       if(btn.matches('[data-close-modal]')) return closeModal(btn.closest('.modal'));
       if(btn.dataset.openCase) return openCaseModal(btn.dataset.openCase, true);
       if(btn.dataset.viewCase) return openCaseModal(btn.dataset.viewCase, false);
@@ -802,518 +809,35 @@
       if(a === 'export-save') return exportSave();
       if(a === 'import-save') return importSave();
       if(a === 'add-debug-coins') return earn(10000, 'Тестовое начисление');
-      if(a === 'install-pwa') return installPWA();
-      if(a === 'show-ios') return showIOSGuide();
-    });
-    document.addEventListener('input', e => {
-      if(['invSearch','invRarity','invSort'].includes(e.target.id)) renderInventory();
-      if(e.target.id === 'targetSearch') renderUpgradeTargets();
-    });
-    document.addEventListener('change', e => {
-      if(['invRarity','invSort'].includes(e.target.id)) renderInventory();
-      if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value; save(); renderUpgrade(); }
-      if(e.target.id === 'battleCase' || e.target.id === 'battleMode') renderBattleInfo();
-    });
-    document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); if(e.key === 'Enter' && e.target && e.target.id === 'promoInput') redeemPromo(); });
-  }
-
-  function route(){
-    state = bootLoaded ? bestState([state, loadState(false)]) : loadState();
-    renderGlobals();
-    setActiveNav();
-    const page = document.body.dataset.page || 'home';
-    if(page === 'home') return renderHome();
-    if(page === 'cases') return renderCases();
-    if(page === 'inventory') return renderInventory();
-    if(page === 'upgrade') return renderUpgrade();
-    if(page === 'contracts') return renderContracts();
-    if(page === 'wheel') return renderWheel();
-    if(page === 'battle') return renderBattle();
-    if(page === 'ads') return renderAds();
-    if(page === 'promos') return renderPromos();
-    if(page === 'profile') return renderProfile();
-    if(page === 'install') return renderInstall();
-  }
-  function setActiveNav(){
-    const file = location.pathname.split('/').pop() || 'index.html';
-    $$('.navlinks a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === file));
-  }
-  function renderGlobals(){
-    state = normalizeState(state);
-    $$('.js-balance').forEach(x => x.textContent = fmt(state.balance));
-    $$('.js-inv-count').forEach(x => x.textContent = String(state.inventory.length));
-    $$('.js-version').forEach(x => x.textContent = VERSION);
-  }
-  function addToasts(){ if(!$('.toast-wrap')) document.body.insertAdjacentHTML('beforeend','<div class="toast-wrap"></div>'); }
-  function toast(text,type=''){
-    const wrap = $('.toast-wrap'); if(!wrap) return;
-    const el = document.createElement('div'); el.className = `toast ${type}`; el.textContent = text; wrap.appendChild(el);
-    setTimeout(() => { el.classList.add('out'); setTimeout(()=>el.remove(),260); }, 4200);
-  }
-  function openModal(sel){ const m = typeof sel === 'string' ? $(sel) : sel; if(m) m.classList.add('show'); }
-  function closeModal(m){ if(!m) return; if(m.dataset.locked === '1') return toast('Окно закроется после окончания таймера','warn'); m.classList.remove('show'); }
-
-  function seedLive(force=false){
-    if(live.length && !force) return;
-    live = [];
-    const items = catalog.items && catalog.items.length ? catalog.items : fallbackItems;
-    for(let i=0;i<12;i++){ const it = sample(items); live.push({user:sample(bots), item:it, value:Math.round((it.value||100)*rnd(.75,1.45))}); }
-  }
-  function fakeLive(){ const it = sample(catalog.items.length?catalog.items:fallbackItems); live.unshift({user:sample(bots),item:it,value:Math.round((it.value||100)*rnd(.8,1.5))}); live=live.slice(0,18); renderLive(); }
-  function addLive(user,item){ live.unshift({user,item,value:item.value||0}); live=live.slice(0,18); renderLive(); }
-  function renderLive(){
-    const root = $('#liveFeed'); if(!root) return;
-    root.innerHTML = live.map(x => `<div class="live-card" style="--rar:${x.item.rarityColor||'#60a5fa'}"><img src="${esc(imgSrc(x.item.image, svgSkin('CS2 Skin')))}" onerror="this.src='${svgSkin('CS2 Skin')}'" loading="lazy" referrerpolicy="no-referrer"><div><b>${esc(x.user)} выбил</b><small>${esc(x.item.name)} · ${fmt(x.value)}</small></div></div>`).join('');
-  }
-
-  function statCards(){ return `<div class="grid cards-4"><div class="stat"><small>Баланс</small><b class="js-balance">${fmt(state.balance)}</b></div><div class="stat"><small>Предметов</small><b>${state.inventory.length}</b></div><div class="stat"><small>Открыто кейсов</small><b>${state.opened}</b></div><div class="stat"><small>Заработано</small><b>${fmt(state.earned)}</b></div></div>`; }
-  function itemCard(it, opts={}){
-    const buttons = opts.buttons ? `<div class="item-actions">${opts.buttons}</div>` : '';
-    return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art"><img src="${esc(imgSrc(it.image, svgSkin(it.name||'CS2 Skin')))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}" loading="lazy" referrerpolicy="no-referrer"></div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
-  }
-  function themeColor(c){
-    const key = `${c.id||''} ${c.name||''}`.toLowerCase();
-    if(/green|high grade|charm|keychain/.test(key)) return '#22c55e';
-    if(/red|covert/.test(key)) return '#ef4444';
-    if(/pink|classified/.test(key)) return '#ec4899';
-    if(/purple|restricted/.test(key)) return '#8b5cf6';
-    if(/blue|mil-spec/.test(key)) return '#4b69ff';
-    if(/industrial|light blue/.test(key)) return '#5e98d9';
-    if(/grey|consumer/.test(key)) return '#b0c3d9';
-    if(/knife|glove|rare/.test(key)) return '#ffd166';
-    if(/sticker|capsule|tournament|copenhagen|shanghai|austin|paris/.test(key)) return '#facc15';
-    if(/agent/.test(key)) return '#f97316';
-    if(/patch/.test(key)) return '#94a3b8';
-    return '#ff7a18';
-  }
-  function coverItems(c){
-    const pool = (c && c.items ? c.items : []).filter(x=>x && x.image);
-    const expensive = [...pool].sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,8);
-    const byRarity = [...pool].sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0)).slice(0,8);
-    const merged = [];
-    [...expensive, ...byRarity, ...pool].forEach(x => { if(merged.length < 5 && !merged.some(m=>m.id===x.id)) merged.push(x); });
-    return merged.slice(0,5);
-  }
-  function caseVisual(c, big=false){
-    const color = themeColor(c);
-    const classes = big ? 'case-visual big' : 'case-visual';
-    const isClassic = c && (c.kind === 'case' || c.kind === 'collection' || c.source === 'offline-classic');
-    const covers = isClassic ? [] : coverItems(c);
-    const coverHtml = covers.length ? `<div class="case-cover-items">${covers.map((x,i)=>`<img class="cover-${i}" src="${esc(imgSrc(x.image, svgSkin(x.name)))}" onerror="this.remove()" alt="${esc(x.name)}" loading="lazy" referrerpolicy="no-referrer">`).join('')}</div>` : '';
-    return `<div class="${classes} ${isClassic?'classic-case':''}" style="--theme:${color}"><img class="case-img ${big?'big':''}" src="${esc(imgSrc(c.image, svgCase(c.name)))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}" loading="lazy" referrerpolicy="no-referrer">${coverHtml}<span class="case-sheen"></span></div>`;
-  }
-  function caseCard(c){
-    const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
-    return `<article class="case-card" style="--theme:${themeColor(c)}"><span class="case-kind">${esc(kindLabel)}</span><span class="price-tier">${c.price<750?'дешёвый':c.price>6500?'дорогой':'средний'}</span>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
-  }
-  function renderHome(){
-    const root = $('#homeRoot'); if(!root) return;
-    const top = [...catalog.items].sort((a,b)=>b.value-a.value).slice(0,8);
-    root.innerHTML = `${statCards()}<section class="block"><div class="head"><div><h2>Популярные кейсы</h2><p>Кнопка «Крутить» сразу открывает модальное окно, списывает баланс и запускает рулетку.</p></div><a class="btn primary" href="cases.html">Все кейсы</a></div><div class="grid case-grid">${catalog.cases.slice(0,6).map(caseCard).join('')}</div></section><section class="block"><div class="head"><div><h2>Редкие дропы</h2><p>Скины из текущего пула CS2.</p></div><a class="btn" href="ads.html">Получить ₽LC</a></div><div class="grid item-grid">${top.map(x=>itemCard(x,{badge:'топ'})).join('')}</div></section>`;
-  }
-  function renderCases(){
-    const root = $('#casesRoot'); if(!root) return;
-    const classicRx = /Kilowatt|Revolution|Recoil|Dreams|Nightmares|Fracture|Clutch|Prisma|Spectrum|Snakebite|Horizon|Gamma|Danger Zone|CS20|Glove|Broken Fang|Chroma|Falchion|Shadow|Wildfire|Vanguard|Huntsman|Phoenix/i;
-    const classic = catalog.cases.filter(c=>c.kind==='case' && classicRx.test(c.name)).slice(0,24);
-    const classicIds = new Set(classic.map(c=>c.id));
-    const officialRest = catalog.cases.filter(c=>c.kind==='case' && !classicIds.has(c.id));
-    const groups = [
-      ['Классические CS2-кейсы', classic],
-      ['Официальные оружейные кейсы', officialRest],
-      ['Коллекции CS2 / Armory Pass', catalog.cases.filter(c=>c.kind==='collection')],
-      ['Кейсы по качеству / цвету', catalog.cases.filter(c=>/^quality-/.test(c.id))],
-      ['Ножи и перчатки', catalog.cases.filter(c=>/^special-/.test(c.id))],
-      ['Турнирные наклейки', catalog.cases.filter(c=>/^stickers-/.test(c.id))],
-      ['Агенты, брелоки, нашивки', catalog.cases.filter(c=>/^(agents|charms|patches|collectibles)-/.test(c.id))]
-    ];
-    root.innerHTML = `<div class="notice"><b>Каталог обновлён:</b> классические CS2-кейсы, коллекции, quality-пулы, стикеры, агенты, брелоки и нашивки. Доступны x3/x5/x10 и быстрое открытие.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
-  }
-  function openCaseModal(caseId, autoSpin){
-    const c = catalog.cases.find(x => x.id === caseId);
-    if(!c) return toast('Кейс не найден','bad');
-    currentCase = c.id;
-    $('#caseModalTitle').textContent = c.name;
-    const content = [...c.items].sort((a,b)=>(rarityValue[a.rarity]||0)-(rarityValue[b.rarity]||0)).map(x=>caseContentCard(x)).join('');
-    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside">${caseVisual(c,true)}<div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть 1x за ${fmt(c.price)}</button><button class="btn blue huge" data-action="spin-fast">Открыть быстро 1x</button><div class="multi-open-row"><button class="small-btn" data-action="open-multi" data-count="3">Быстро x3 · ${fmt(c.price*3)}</button><button class="small-btn" data-action="open-multi" data-count="5">Быстро x5 · ${fmt(c.price*5)}</button><button class="small-btn" data-action="open-multi" data-count="10">Быстро x10 · ${fmt(c.price*10)}</button></div><button class="btn" data-action="add-debug-coins">+10 000 ₽LC для теста</button><p class="small">Стрелка по центру показывает предмет при обычном прокруте. Быстрое открытие пропускает анимацию и сразу начисляет дроп.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
-    openModal('#caseModal');
-    if(autoSpin) setTimeout(() => spinCase(c.id), 120);
-  }
-  function caseContentCard(it){
-    return `<article class="content-card" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="content-art"><img src="${esc(imgSrc(it.image, svgSkin(it.name||'CS2 Skin')))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}" loading="lazy" referrerpolicy="no-referrer"></div><b>${esc(it.name)}</b><small>${esc(it.rarity||'Skin')}</small><span>${fmt(it.value)}</span></article>`;
-  }
-  function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(imgSrc(it.image, svgSkin(it.name||'Skin')))}" onerror="this.src='${svgSkin(it.name||'Skin')}'" loading="lazy" referrerpolicy="no-referrer"><b>${esc(it.name)}</b></div>`; }
-  function weighted(c){
-    const pool = c && c.items && c.items.length ? c.items : fallbackItems;
-    const weights = pool.map(it => hiddenCaseWeight(it,c));
-    const total = weights.reduce((s,x)=>s+x,0) || 1;
-    let r = cryptoRandom() * total;
-    for(let i=0;i<pool.length;i++){ r -= weights[i]; if(r <= 0) return pool[i]; }
-    return pool[pool.length-1];
-  }
-  function hiddenCaseWeight(it,c){
-    let w = Math.max(0.01, toNum(it.weight, rarityWeight[it.rarity] || 6));
-    const price = Math.max(1, toNum(c && c.price, 1));
-    const ratio = toNum(it.value,0) / price;
-    const odds = (c && c._odds) || {profitOdds:.42,jackpot:.25,cheap:.1};
-    if(ratio >= 1) w *= odds.profitOdds;
-    if(ratio >= 1.35) w *= (odds.profitOdds * 0.9);
-    if(ratio >= 2.2) w *= odds.jackpot;
-    if(ratio < .55) w *= (1 + odds.cheap);
-    if(ratio < .25) w *= (1 + odds.cheap * 0.8);
-    if(c && c.kind === 'special') w *= ratio >= 1 ? 0.76 : 1.12;
-    w *= rnd(.86, 1.18);
-    return w;
-  }
-  function spinCase(caseId, opts={}){
-    if(busy.case) return toast('Рулетка уже крутится','warn');
-    const c = catalog.cases.find(x => x.id === caseId);
-    if(!c) return toast('Кейс не найден','bad');
-    const fast = !!(opts && opts.fast);
-    const count = clamp(Math.round(toNum(opts && opts.count, 1)), 1, 25);
-    const totalCost = Math.max(1, Math.round(toNum(c.price,0) * count));
-    if(!spend(totalCost, count > 1 ? `Открытие ${c.name} x${count}` : `Открытие ${c.name}`)) return;
-    state.opened += count;
-    save();
-    busy.case = true;
-    const buttons = $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]');
-    buttons.forEach(b => b.disabled = true);
-    const mainBtn = $('[data-action="spin-current-case"]'); if(mainBtn) mainBtn.textContent = fast || count > 1 ? 'Открываю...' : 'Крутится...';
-
-    if(fast || count > 1){
-      const drops = Array.from({length:count}, () => addItem(weighted(c), c.name));
-      drops.forEach(d => addLive('Ты', d));
-      busy.case = false;
-      buttons.forEach(b => b.disabled = false);
-      if(mainBtn) mainBtn.textContent = `Открыть 1x за ${fmt(c.price)}`;
-      if(count === 1) showDrop(drops[0], c); else showBatchDrop(drops, c, totalCost);
-      return;
-    }
-
-    const strip = $('#rouletteStrip'); const box = strip && strip.closest('.roulette-box');
-    const win = weighted(c); const winIndex = 41;
-    if(!strip || !box){ finishDrop(win,c,mainBtn); return; }
-    const cards = Array.from({length:62},(_,i)=> i===winIndex ? win : weighted(c));
-    strip.style.transition='none'; strip.style.transform='translateX(0px)'; strip.innerHTML = cards.map(rollCard).join('');
-    strip.getBoundingClientRect();
-    requestAnimationFrame(() => {
-      const card = strip.children[winIndex];
-      const target = Math.max(0, card.offsetLeft - box.clientWidth/2 + card.clientWidth/2 + rnd(-18,18));
-      strip.style.transition='transform 4.6s cubic-bezier(.08,.75,.08,1)';
-      strip.style.transform=`translateX(-${target}px)`;
-    });
-    setTimeout(() => finishDrop(win,c,mainBtn), 4850);
-  }
-  function finishDrop(win,c,btn){
-    const inv = addItem(win, c.name);
-    addLive('Ты', inv);
-    busy.case = false;
-    $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]').forEach(b => b.disabled=false);
-    if(btn){ btn.disabled=false; btn.textContent=`Открыть 1x за ${fmt(c.price)}`; }
-    showDrop(inv, c);
-  }
-  function showDrop(it,c){
-    $('#dropModalBody').innerHTML = `<div class="drop-box"><p class="kicker">Выпал предмет</p><img class="drop-img" src="${esc(imgSrc(it.image, svgSkin(it.name)))}" onerror="this.src='${svgSkin(it.name)}'" loading="lazy" referrerpolicy="no-referrer"><h2 style="color:${it.rarityColor||'#fff'}">${esc(it.displayName||it.name)}</h2><p>${esc(it.rarity)} · ${esc(it.wear||'')} · float ${esc(it.float||'')}</p><h3>${fmt(it.value)}</h3><div class="drop-actions"><button class="btn green" data-sell="${esc(it.uid)}">Продать за ${fmt(it.value)}</button><button class="btn" data-close-modal>Оставить</button><button class="btn blue" data-upgrade-item="${esc(it.uid)}">В апгрейд</button><button class="btn" data-contract-item="${esc(it.uid)}">В контракт</button>${c?`<button class="btn primary" data-action="open-again">Открыть ещё</button><button class="btn blue" data-action="open-again-fast">Быстро ещё</button>`:''}</div></div>`;
-    openModal('#dropModal');
-  }
-
-  function showBatchDrop(items,c,totalCost){
-    items = Array.isArray(items) ? items.filter(Boolean) : [];
-    const totalValue = items.reduce((sum,it)=>sum + toNum(it.value,0),0);
-    const profit = Math.round(totalValue - toNum(totalCost,0));
-    const uids = items.map(x=>x.uid).join(',');
-    $('#dropModalBody').innerHTML = `<div class="drop-box batch-drop"><p class="kicker">Массовое открытие</p><h2>${esc(c && c.name ? c.name : 'Кейс')} · x${items.length}</h2><div class="batch-summary"><span>Потрачено: <b>${fmt(totalCost)}</b></span><span>Выпало на: <b>${fmt(totalValue)}</b></span><span class="${profit>=0?'plus':'minus'}">Итог: <b>${profit>=0?'+':''}${fmt(profit)}</b></span></div><div class="batch-grid">${items.map(it=>itemCard(it,{badge:'drop'})).join('')}</div><div class="drop-actions"><button class="btn green" data-action="sell-batch" data-uids="${esc(uids)}">Продать всё за ${fmt(totalValue)}</button><button class="btn" data-close-modal>Оставить всё</button>${c?`<button class="btn primary" data-action="open-multi" data-count="${items.length}">Открыть ещё x${items.length}</button><button class="btn blue" data-action="open-again-fast">Быстро 1x</button>`:''}</div></div>`;
-    openModal('#dropModal');
-  }
-  function sellBatch(uids){
-    const set = new Set(Array.isArray(uids)?uids:[]);
-    const items = state.inventory.filter(x => set.has(x.uid));
-    if(!items.length) return toast('Эти предметы уже проданы или не найдены','bad');
-    const total = items.reduce((s,x)=>s+toNum(x.value,0),0);
-    removeItems(items.map(x=>x.uid));
-    state.sold += Math.round(total);
-    earn(total, `Массовая продажа x${items.length}`);
-    closeModal($('#dropModal'));
-    route();
-  }
-
-  function renderInventory(){
-    state = bestState([state, loadState(false)]);
-    renderGlobals();
-    const root = $('#inventoryRoot'); if(!root) return;
-    const controls = $('#inventoryControls');
-    const prevQ = ($('#invSearch') && $('#invSearch').value || '').toLowerCase().trim();
-    const prevR = $('#invRarity') ? $('#invRarity').value : 'all';
-    const prevS = $('#invSort') ? $('#invSort').value : 'new';
-    const fullInv = [...state.inventory].map(normalizeInvItem).filter(Boolean);
-    const fullTotal = fullInv.reduce((sum,x)=>sum + toNum(x.value,0),0);
-    const avgValue = fullInv.length ? Math.round(fullTotal / fullInv.length) : 0;
-    const rarities = [...new Set(fullInv.map(x=>x.rarity).filter(Boolean))].sort((a,b)=>(rarityValue[b]||0)-(rarityValue[a]||0));
-    if(controls){
-      controls.innerHTML = `<div class="inventory-topline"><div class="inv-total-card"><small>Стоимость инвентаря</small><b>${fmt(fullTotal)}</b><span>${fullInv.length} предметов · среднее ${fmt(avgValue)}</span></div><div class="inv-total-actions"><button class="btn green" data-action="sell-all-inventory" ${fullInv.length?'':'disabled'}>Продать всё</button><button class="small-btn" data-action="sell-cheap" ${fullInv.length?'':'disabled'}>Продать дешевле 200 ₽LC</button></div></div><div class="filters"><input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select></div>`;
-    }
-    const q = ($('#invSearch') && $('#invSearch').value || prevQ).toLowerCase().trim();
-    const r = $('#invRarity') ? $('#invRarity').value : prevR;
-    const srt = $('#invSort') ? $('#invSort').value : prevS;
-    let arr = [...fullInv];
-    if(q) arr = arr.filter(x => (x.displayName||x.name).toLowerCase().includes(q));
-    if(r !== 'all') arr = arr.filter(x => x.rarity === r);
-    if(srt === 'valueDesc') arr.sort((a,b)=>b.value-a.value);
-    else if(srt === 'valueAsc') arr.sort((a,b)=>a.value-b.value);
-    else if(srt === 'rarity') arr.sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0));
-    else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
-    const visibleTotal = arr.reduce((sum,x)=>sum + toNum(x.value,0),0);
-    root.innerHTML = arr.length ? `<div class="notice inv-visible-summary"><b>Показано:</b> ${arr.length} из ${fullInv.length} предметов · сумма видимых: <b>${fmt(visibleTotal)}</b></div><div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо. Если только что обновлял сайт на GitHub Pages — нажми Ctrl+F5, чтобы браузер не держал старый cache.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
-  }
-  function sellAllInventory(){
-    const items = [...state.inventory].map(normalizeInvItem).filter(Boolean);
-    if(!items.length) return toast('Инвентарь пуст','warn');
-    const total = Math.round(items.reduce((sum,x)=>sum + toNum(x.value,0),0));
-    if(!confirm(`Продать весь инвентарь: ${items.length} предметов за ${fmt(total)}?`)) return;
-    removeItems(items.map(x=>x.uid));
-    state.sold += total;
-    earn(total, `Продажа всего инвентаря x${items.length}`);
-    renderInventory();
-  }
-  function sellCheap(){
-    const cheap = state.inventory.filter(x => x.value < 200);
-    if(!cheap.length) return toast('Нет предметов дешевле 200 ₽LC','warn');
-    const total = cheap.reduce((s,x)=>s+x.value,0);
-    removeItems(cheap.map(x=>x.uid));
-    state.sold += total;
-    earn(total, `Массовая продажа ${cheap.length} предметов`);
-    renderInventory();
-  }
-
-  let currentTarget = null;
-  function renderUpgrade(){
-    const root = $('#upgradeRoot'); if(!root) return;
-    const selected = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
-    if(selected) state.pendingUpgrade = selected.uid;
-    const options = state.inventory.map(x=>`<option value="${esc(x.uid)}" ${selected&&selected.uid===x.uid?'selected':''}>${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
-    root.innerHTML = `<div class="upgrade-layout"><aside class="panel"><h3>Твой предмет</h3>${selected?itemCard(selected):'<div class="empty">Нет предмета</div>'}<select id="upgradeSource">${options}</select><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade" ${selected?'':'disabled'}>Апгрейд</button><p class="small">При проигрыше предмет исчезает. Это локальный фан-симулятор.</p></aside><section><div class="upgrade-roulette" id="upgradeRoulette"><div class="upgrade-arrow"></div><div class="upgrade-lane" id="upgradeLane"><span class="zone lose">LOSE</span><span class="zone win">WIN</span><span class="zone lose">LOSE</span></div></div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
-    renderUpgradeTargets();
-  }
-  function renderUpgradeTargets(){
-    const selected = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
-    const q = ($('#targetSearch') && $('#targetSearch').value || '').toLowerCase();
-    let targets = catalog.items.filter(x => !selected || x.value > selected.value * 1.15);
-    if(q) targets = targets.filter(x => x.name.toLowerCase().includes(q));
-    targets = targets.sort((a,b)=>a.value-b.value).slice(0,60);
-    currentTarget = targets[0] || null;
-    const box = $('#upgradeTargets'); if(!box) return;
-    box.innerHTML = targets.map((x,i)=>itemCard(x,{selected:i===0,badge:'цель'})).join('') || '<div class="empty">Целей дороже текущего предмета не найдено.</div>';
-    $$('#upgradeTargets .item-card').forEach((card,i)=>card.addEventListener('click',()=>{
-      $$('#upgradeTargets .item-card').forEach(c=>c.classList.remove('selected'));
-      card.classList.add('selected'); currentTarget = targets[i]; updateUpgradeChance();
-    }));
-    updateUpgradeChance();
-  }
-  function chance(src,tgt){
-    if(!src || !tgt) return 0;
-    const ratio = toNum(src.value,0) / Math.max(1, toNum(tgt.value,1));
-    // House-edge upgrade formula: чем дороже цель, тем ниже шанс. Максимум урезан, чтобы апгрейд не превращался в постоянную победу.
-    return clamp(ratio * 67, 0.35, 58);
-  }
-  function updateUpgradeChance(){
-    const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
-    const ch = chance(src,currentTarget);
-    const el = $('#upgradeChance');
-    if(el) el.innerHTML = src && currentTarget ? `<p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '';
-    const win = $('#upgradeLane .win'); if(win) win.style.width = `${clamp(ch,4,76)}%`;
-  }
-  function doUpgrade(){
-    if(busy.upgrade) return toast('Апгрейд уже крутится','warn');
-    const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0];
-    const tgt = currentTarget;
-    if(!src || !tgt) return toast('Выбери предмет и цель','bad');
-    const ch = chance(src,tgt);
-    busy.upgrade = true;
-    const btn = $('[data-action="do-upgrade"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
-    const lane = $('#upgradeLane');
-    const success = cryptoRandom() < (ch / 100);
-    const winStart = 50 - ch/2;
-    const winEnd = 50 + ch/2;
-    const stopPercent = success ? rnd(winStart+1, winEnd-1) : (cryptoRandom()<.5 ? rnd(2, Math.max(3,winStart-1)) : rnd(Math.min(97,winEnd+1),98));
-    if(lane){
-      lane.style.transition='none'; lane.style.transform='translateX(0)'; lane.getBoundingClientRect();
-      requestAnimationFrame(()=>{ lane.style.transition='transform 3.6s cubic-bezier(.08,.75,.08,1)'; lane.style.transform=`translateX(calc(-${stopPercent}% + 50%))`; });
-    }
-    setTimeout(()=>{
-      removeItems(src.uid); state.upgrades += 1;
-      if(success){ const win = addItem(tgt,'upgrade'); state.pendingUpgrade=win.uid; addLive('Ты',win); toast(`Апгрейд успешен: ${win.displayName}`,'good'); showDrop(win,null); }
-      else{ state.pendingUpgrade=null; toast('Апгрейд не прошёл, предмет сгорел','bad'); }
-      busy.upgrade=false; save(); renderUpgrade();
-    }, 3900);
-  }
-
-  function toggleContract(uid){
-    const set = new Set(state.contractSelected||[]);
-    if(set.has(uid)) set.delete(uid); else if(set.size < 10) set.add(uid); else return toast('В контракт можно максимум 10 предметов','bad');
-    state.contractSelected = Array.from(set); save();
-  }
-  function renderContracts(){
-    const root = $('#contractsRoot'); if(!root) return;
-    const set = new Set(state.contractSelected||[]);
-    const selected = state.inventory.filter(x=>set.has(x.uid));
-    const total = selected.reduce((s,x)=>s+x.value,0);
-    root.innerHTML = `<div class="contract-layout"><aside class="panel"><h3>Контракт</h3><div class="big-count">${selected.length}/10</div><p>Минимум 3 предмета.</p><p>Сумма: <b>${fmt(total)}</b></p><p>Примерный результат: <b>${fmt(total*rnd(1.05,1.85))}</b></p><button class="btn primary huge" data-action="make-contract" ${selected.length>=3?'':'disabled'}>Создать контракт</button><button class="btn" data-action="clear-contract">Очистить</button></aside><section><div class="grid item-grid">${state.inventory.map(x=>itemCard(x,{selected:set.has(x.uid),buttons:`<button data-contract-item="${esc(x.uid)}">${set.has(x.uid)?'Убрать':'Добавить'}</button>`})).join('') || '<div class="empty">Нет предметов.</div>'}</div></section></div>`;
-  }
-  function makeContract(){
-    const set = new Set(state.contractSelected||[]);
-    const selected = state.inventory.filter(x=>set.has(x.uid));
-    if(selected.length < 3) return toast('Нужно минимум 3 предмета','bad');
-    const total = selected.reduce((s,x)=>s+x.value,0);
-    let candidates = catalog.items.filter(x => x.value >= total*.5 && x.value <= total*2.3);
-    if(!candidates.length) candidates = catalog.items;
-    const base = Object.assign({}, sample(candidates), {value:Math.round(total*rnd(.92,1.9))});
-    removeItems(selected.map(x=>x.uid));
-    state.contractSelected=[]; state.contracts += 1;
-    const reward = addItem(base,'contract'); addLive('Ты',reward); save(); renderContracts(); showDrop(reward,null);
-    toast(`Контракт создан: ${reward.displayName}`,'good');
-  }
-
-  function cooldownLeft(){ return Math.max(0, (state.lastWheelAt || 0) + WHEEL_COOLDOWN - Date.now()); }
-  function formatTime(ms){ const s=Math.ceil(ms/1000); const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=s%60; return h>0?`${h}ч ${m}м ${sec}с`:`${m}м ${sec}с`; }
-  function renderWheel(){
-    const root = $('#wheelRoot'); if(!root) return;
-    const left = cooldownLeft();
-    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel" ${left?'disabled':''}>${left?'Доступно через '+formatTime(left):'Крутить бонусное колесо'}</button><div class="notice">Лимит: 1 прокрутка в 2 часа. После остановки сразу начисляет ₽LC или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
-    if(left) setTimeout(renderWheel, Math.min(left, 1000));
-  }
-  function spinWheel(){
-    if(busy.wheel) return toast('Колесо уже крутится','warn');
-    const left = cooldownLeft();
-    if(left) return toast(`Колесо будет доступно через ${formatTime(left)}`,'warn');
-    busy.wheel = true;
-    state.lastWheelAt = Date.now(); save();
-    const btn = $('[data-action="spin-wheel"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
-    const rewards = [
-      ['+250 ₽LC','coins',250],['+500 ₽LC','coins',500],['+750 ₽LC','coins',750],['+1 000 ₽LC','coins',1000],['+2 500 ₽LC','coins',2500],['Промо +1 500 ₽LC','coins',1500],['Случайный скин','item',0],['Редкий скин','rare',0]
-    ];
-    const idx = Math.floor(cryptoRandom()*rewards.length);
-    wheelDeg += 360*6 + (360 - idx*45) + rnd(8,35);
-    const wh = $('#wheel'); if(wh) wh.style.transform = `rotate(${wheelDeg}deg)`;
-    setTimeout(()=>{
-      const [label,type,amount] = rewards[idx];
-      if(type === 'coins'){ earn(amount,'Бонусное колесо'); $('#wheelResult').innerHTML = `<div class="result-card"><h2>${esc(label)}</h2><p>Баланс обновлён: ${fmt(state.balance)}</p></div>`; }
-      else{
-        let pool = catalog.items;
-        if(type === 'rare') pool = catalog.items.filter(x => ['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(x.rarity));
-        const it = addItem(sample(pool.length?pool:catalog.items),'wheel'); addLive('Ты',it); $('#wheelResult').innerHTML = itemCard(it,{badge:'колесо'});
-      }
-      busy.wheel=false; renderWheel();
-    }, 3300);
-  }
-
-  function todayAdViews(){ const k = DAY_KEY(); return Math.max(0, Math.round(toNum(state.adViews && state.adViews[k],0))); }
-  function renderAds(){
-    const root = $('#adsRoot'); if(!root) return;
-    const used = todayAdViews();
-    root.innerHTML = `<div class="ad-card"><div><span class="kicker">Реклама своих проектов</span><h2>10 секунд просмотра = ${fmt(AD_REWARD)}</h2><p>Окно рекламы нельзя закрыть до конца таймера. Лимит в статической версии: ${AD_DAILY_LIMIT} просмотров в сутки на браузер/устройство.</p><button class="btn primary huge" data-action="start-ad" ${used>=AD_DAILY_LIMIT?'disabled':''}>${used>=AD_DAILY_LIMIT?'Лимит на сегодня исчерпан':'Смотреть рекламу'}</button><p class="small">Сегодня использовано: <b>${used}/${AD_DAILY_LIMIT}</b></p></div><div class="project-grid">${projectCards()}</div></div>`;
-  }
-  function projectCards(){
-    const p = [['Портфолио','Сайт-визитка и проекты','#'],['YouTube / видео','Ролики, конференции, обзоры','#'],['Подкаст','Финансы и учебные задания','#'],['GitHub','HTML-проекты и демо','#']];
-    return p.map(x=>`<a class="project-card" href="${x[2]}"><h3>${esc(x[0])}</h3><p>${esc(x[1])}</p></a>`).join('');
-  }
-  function startAd(){
-    if(busy.ad) return;
-    const used = todayAdViews();
-    if(used >= AD_DAILY_LIMIT) return toast('Лимит рекламы на сегодня исчерпан','warn');
-    busy.ad = true;
-    const modal = document.createElement('div');
-    modal.className = 'modal show ad-lock-modal'; modal.dataset.locked = '1';
-    modal.innerHTML = `<div class="modal-card ad-watch"><div class="modal-head"><h3>Реклама проекта</h3><button class="close" data-close-modal title="Закроется после таймера">×</button></div><div class="modal-body"><div class="ad-card"><div><span class="kicker">Просмотр ${fmt(AD_REWARD)}</span><h2 id="adLockTitle">Осталось 10 секунд</h2><p>Закрытие заблокировано до конца просмотра.</p><div class="progress"><span id="adProgress"></span></div><p id="adTimer">10 сек.</p></div><div class="project-grid">${projectCards()}</div></div></div></div>`;
-    document.body.appendChild(modal);
-    const bar = $('#adProgress', modal); const timer = $('#adTimer', modal); const title = $('#adLockTitle', modal);
-    let sec = 10; if(bar) bar.style.width='0%';
-    const int = setInterval(()=>{
-      sec--; if(bar) bar.style.width = `${(10-sec)*10}%`; if(timer) timer.textContent = sec>0 ? `${sec} сек.` : 'Готово'; if(title) title.textContent = sec>0 ? `Осталось ${sec} сек.` : 'Просмотр завершён';
-      if(sec <= 0){
-        clearInterval(int);
-        const k = DAY_KEY(); state.adViews[k] = todayAdViews() + 1;
-        earn(AD_REWARD,'Просмотр рекламы');
-        busy.ad=false; modal.dataset.locked='0';
-        modal.querySelector('.close').textContent = '×';
-        setTimeout(()=>{ closeModal(modal); modal.remove(); renderAds(); }, 700);
-      }
-    },1000);
-  }
-
-  function renderBattle(){
-    const root = $('#battleRoot'); if(!root) return;
-    const first = catalog.cases[0];
-    root.innerHTML = `<div class="battle-layout improved-battle"><aside class="panel battle-sidebar"><span class="kicker">Case Battle</span><h3>Баттл против ботов</h3><p>Ты оплачиваешь своё место. Каждый игрок открывает один и тот же кейс. Победитель по сумме дропа забирает весь пул.</p><label class="field-label">Кейс</label><select id="battleCase">${catalog.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${fmt(c.price)}</option>`).join('')}</select><label class="field-label">Режим</label><select id="battleMode"><option value="1v1">1 vs 1</option><option value="1v1v1" selected>1 vs 1 vs 1</option><option value="2v2">2 vs 2 Team</option></select><div id="battleInfo"></div><button class="btn primary huge" data-action="start-battle">Начать баттл</button><p class="small">Без реальных ставок и вывода. Всё сохраняется в localStorage.</p></aside><section class="battle-stage"><div class="battle-top"><h2>Арена</h2><p id="battleStatus">Выбери кейс и режим, затем начни баттл.</p></div><div id="battleArena" class="battle-arena"><div class="empty">Пока баттла нет.</div></div></section></div>`;
-    if(first) $('#battleCase').value = first.id;
-    renderBattleInfo();
-  }
-  function battlePlayers(mode){
-    if(mode === '1v1') return ['Ты','BOT Max'];
-    if(mode === '2v2') return ['Ты','BOT Max','BOT Neo','BOT Rex'];
-    return ['Ты','BOT Max','BOT Neo'];
-  }
-  function renderBattleInfo(){
-    const c = catalog.cases.find(x=>x.id === ($('#battleCase') && $('#battleCase').value));
-    const mode = ($('#battleMode') && $('#battleMode').value) || '1v1v1';
-    const players = battlePlayers(mode);
-    const el = $('#battleInfo');
-    if(el && c) el.innerHTML = `<div class="battle-price"><span>Твоё место</span><b>${fmt(c.price)}</b></div><div class="battle-price"><span>Игроков</span><b>${players.length}</b></div><div class="battle-price"><span>Потенциальный пул</span><b>${fmt(c.price * players.length)}</b></div>`;
-  }
-  function battleRollStrip(c, finalItem){
-    const cards = Array.from({length:34},()=>rollCard(weighted(c)));
-    cards.push(rollCard(finalItem));
-    return `<div class="roulette-box small battle-roll"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip">${cards.join('')}</div></div>`;
-  }
-  function startBattle(){
-    if(busy.battle) return toast('Баттл уже идёт','warn');
-    const c = catalog.cases.find(x=>x.id === ($('#battleCase') && $('#battleCase').value)); if(!c) return toast('Выбери кейс','bad');
-    const mode = ($('#battleMode') && $('#battleMode').value) || '1v1v1';
-    const names = battlePlayers(mode);
-    if(!spend(c.price, `Case Battle: ${c.name}`)) return;
-    busy.battle = true;
-    state.battles += 1;
-    save();
-    const players = names.map((name,idx) => ({name, team: mode==='2v2' ? (idx%2===0?'A':'B') : name, item: weighted(c)}));
-    const arena = $('#battleArena');
-    const status = $('#battleStatus');
-    if(status) status.textContent = 'Кейсы открываются...';
-    arena.innerHTML = players.map(p => `<article class="battle-player"><div class="battle-player-head"><b>${esc(p.name)}</b>${mode==='2v2'?`<span class="pill">Team ${p.team}</span>`:''}</div>${battleRollStrip(c,p.item)}<p class="small">Крутится...</p></article>`).join('');
-    $$('#battleArena .roulette-strip').forEach(strip => {
-      strip.style.transition = 'none';
-      strip.style.transform = 'translateX(0px)';
-      strip.getBoundingClientRect();
-      requestAnimationFrame(()=>{
-        const last = strip.lastElementChild;
-        const box = strip.closest('.roulette-box');
-        const target = Math.max(0, last.offsetLeft - box.clientWidth/2 + last.clientWidth/2 + rnd(-14,14));
-        strip.style.transition='transform 3.9s cubic-bezier(.08,.75,.08,1)';
-        strip.style.transform=`translateX(-${target}px)`;
-      });
-    });
-    setTimeout(()=>{
-      const results = players.map(p => ({...p, inv: normalizeInvItem(Object.assign({}, p.item, {uid:id(), source:'battle', addedAt:Date.now(), value:Math.max(1,Math.round(toNum(p.item.value,100)*rnd(.92,1.12)))}))}));
-      let winner;
-      if(mode === '2v2'){
-        const sums = results.reduce((m,x)=>{m[x.team]=(m[x.team]||0)+x.inv.value; return m;},{});
-        const winTeam = (sums.A >= sums.B) ? 'A' : 'B';
-        winner = {team:winTeam, name:`Team ${winTeam}`, value:sums[winTeam]};
-      }else{
-        const top = [...results].sort((a,b)=>b.inv.value-a.inv.value)[0];
-        winner = {team:top.team, name:top.name, value:top.inv.value};
-      }
-      const userWon = mode === '2v2' ? winner.team === 'A' : winner.name === 'Ты';
-      arena.innerHTML = `<div class="battle-summary ${userWon?'win':'lose'}"><h2>${userWon?'Победа!':'Поражение'}</h2><p>${esc(winner.name)} забирает пул на ${fmt(results.reduce((s,x)=>s+x.inv.value,0))}</p></div>` + results.map(x => `<article class="battle-player result ${((mode==='2v2' && x.team===winner.team) || (mode!=='2v2' && x.name===winner.name))?'winner':''}"><div class="battle-player-head"><b>${esc(x.name)}</b>${mode==='2v2'?`<span class="pill">Team ${x.team}</span>`:''}</div>${itemCard(x.inv,{badge:fmt(x.inv.value)})}</article>`).join('');
-      if(userWon){
-        state.wins += 1;
-        results.forEach(x => { const it = addItem(Object.assign({}, x.inv, {uid:undefined}), 'battle-win'); addLive('Ты',it); });
-        toast('Ты выиграл баттл — весь пул добавлен в инвентарь','good');
-      }else{
-        toast(`${winner.name} выиграл. Твой дроп не добавлен в инвентарь.`, 'bad');
-      }
-      if(status) status.textContent = userWon ? 'Пул начислен в инвентарь.' : 'Баттл завершён.';
-      busy.battle = false;
-      save();
       renderBattleInfo();
-    }, 4300);
+    }
+    function findActionTarget(e){
+      let btn = e.target && e.target.closest ? e.target.closest(selector) : null;
+      if(btn) return btn;
+      try{
+        const t = e.changedTouches && e.changedTouches[0];
+        if(t){
+          const el = document.elementFromPoint(t.clientX, t.clientY);
+          if(el && el.closest) btn = el.closest(selector);
+        }
+      }catch(err){}
+      return btn;
+    }
+    document.addEventListener('click', e => {
+      const btn = findActionTarget(e);
+      if(btn) activate(btn, e);
+    }, {capture:true});
+    document.addEventListener('touchend', e => {
+      const btn = findActionTarget(e);
+      if(btn) activate(btn, e);
+    }, {capture:true, passive:false});
+    if(window.PointerEvent){
+      document.addEventListener('pointerup', e => {
+        if(e.pointerType === 'mouse') return;
+        const btn = findActionTarget(e);
+        if(btn) activate(btn, e);
+      }, {capture:true, passive:false});
+    }
   }
 
   function isIOSDevice(){
@@ -1399,55 +923,22 @@
   function initMobileTapBridge(){
     if(document.documentElement.dataset.tapBridge === '1') return;
     document.documentElement.dataset.tapBridge = '1';
-    const actionSelector = '[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]';
     const linkSelector = 'a[href]';
-    let lastTarget = null, lastAt = 0;
-    const getTouchTarget = e => {
-      let target = e.target && e.target.closest ? e.target.closest(actionSelector) : null;
-      if(target) return target;
-      try{
-        const t = e.changedTouches && e.changedTouches[0];
-        if(t){
-          const el = document.elementFromPoint(t.clientX, t.clientY);
-          if(el && el.closest) target = el.closest(actionSelector);
-        }
-      }catch(err){}
-      return target;
-    };
-    const bridge = e => {
-      const target = getTouchTarget(e);
-      if(!target || target.disabled || target.getAttribute('aria-disabled') === 'true') return;
-      const now = Date.now();
-      if(lastTarget === target && now - lastAt < 420) return;
-      lastTarget = target; lastAt = now;
-      target.__tapBridgeAt = now;
-      try{ e.preventDefault(); e.stopPropagation(); }catch(err){}
-      const ev = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
-      ev.__tapBridge = true;
-      target.dispatchEvent(ev);
-    };
-    document.addEventListener('touchend', bridge, {passive:false, capture:true});
-    if(window.PointerEvent){
-      document.addEventListener('pointerup', e => {
-        if(e.pointerType === 'touch' || e.pointerType === 'pen') bridge(e);
-      }, {passive:false, capture:true});
-    }
-    // Страховка для обычных ссылок-кнопок на iOS: если Safari не отдаёт click, переходим вручную.
+    // v25: действия кнопок обрабатываются напрямую в bindEvents через click/touchend/pointerup.
+    // Здесь оставляем только ручной переход по обычным ссылкам для iOS/PWA, где click иногда теряется.
     document.addEventListener('touchend', e => {
       const a = e.target && e.target.closest ? e.target.closest(linkSelector) : null;
       if(!a || a.closest('[data-action]') || a.hasAttribute('download')) return;
       const href = a.getAttribute('href') || '';
       if(!href || href.startsWith('#') || href.startsWith('javascript:')) return;
       if(a.target && a.target !== '_self') return;
-      if(!/\.html($|[?#])/.test(href) && !/^[a-z0-9_-]+\.html/i.test(href)) return;
       try{ e.preventDefault(); document.body.classList.remove('nav-open'); location.href = href; }catch(err){}
-    }, {passive:false, capture:true});
-    document.addEventListener('touchstart', e => {
-      if(document.body.classList.contains('nav-open')) return;
+    }, {passive:false});
+    requestAnimationFrame(() => {
       const b = document.querySelector('.menu-backdrop');
       if(b) b.style.pointerEvents = 'none';
       $$('.modal:not(.show)').forEach(m => { m.style.pointerEvents = 'none'; });
-    }, {passive:true});
+    });
   }
 
   let deferredInstallPrompt = null;
