@@ -1,4 +1,3 @@
-const VERSION='26.0.0';
-self.addEventListener('install', e => { self.skipWaiting(); });
-self.addEventListener('activate', e => { e.waitUntil((async()=>{ const keys=await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); await self.registration.unregister(); await self.clients.claim(); })()); });
-self.addEventListener('fetch', () => {});
+// CS2 Case Lab v27: service worker disabled intentionally to avoid stale GitHub Pages cache.
+self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.registration.unregister()));
