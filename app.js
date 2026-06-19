@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '14.0.0';
+  const VERSION = '16.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -365,6 +365,7 @@
   async function boot(){
     addToasts();
     initIOSViewport();
+    initResponsiveMenu();
     initInstallPrompt();
     purgeOldCaches();
     registerServiceWorker();
@@ -1190,6 +1191,21 @@
   function isStandaloneMode(){
     return !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
   }
+
+  function initResponsiveMenu(){
+    const btn = $('.menu-toggle');
+    const nav = $('.navlinks');
+    if(!btn || !nav) return;
+    const close = () => { document.body.classList.remove('nav-open'); btn.setAttribute('aria-expanded','false'); };
+    const open = () => { document.body.classList.add('nav-open'); btn.setAttribute('aria-expanded','true'); };
+    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); document.body.classList.contains('nav-open') ? close() : open(); });
+    const backdrop = $('.menu-backdrop');
+    if(backdrop) backdrop.addEventListener('click', close);
+    nav.addEventListener('click', e => { if(e.target.closest('a')) close(); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
+    window.addEventListener('resize', () => { if(innerWidth > 1100) close(); }, {passive:true});
+  }
+
   function initIOSViewport(){
     const html = document.documentElement;
     const setVh = () => {
@@ -1245,7 +1261,7 @@
     const root = $('#promosRoot'); if(!root) return;
     const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
     const totalCodes = Object.keys(PROMO_CODES).length;
-    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME13</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article><article class="panel"><h3>Для владельца проекта</h3><p>Список кодов находится в <code>app.js</code> в объекте <b>PROMO_CODES</b>. На GitHub Pages это локальная система без сервера: лимит действует на save пользователя.</p><p class="small">Для настоящих закрытых/одноразовых кодов на всех пользователей нужен backend.</p></article></div>`;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME13</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
   }
   function redeemPromo(){
     const input = $('#promoInput');
