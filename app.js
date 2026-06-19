@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.7.0';
+  const VERSION = '31.8.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -20,13 +20,29 @@
   const LC_USD_VALUE = 10;
   const RUB_PER_LC = RUB_PER_USD * LC_USD_VALUE;
   const CURRENCY = 'RUB';
-  const PRICE_VERSION = 'market-multi-v31-7';
+  const PRICE_VERSION = 'market-multi-v31-8';
   const CURRENCY_OPTIONS = Object.freeze({
     RUB:{label:'₽', name:'Рубли', rate:1, suffix:'₽', decimals:0},
     USD:{label:'$', name:'Доллары', rate:RUB_PER_USD, prefix:'$', decimals:2},
     EUR:{label:'€', name:'Евро', rate:RUB_PER_EUR, suffix:'€', decimals:2},
     LC:{label:'LC', name:'LC', rate:RUB_PER_LC, suffix:'LC', decimals:2}
   });
+  const THEME_KEY = 'cs2_case_lab_theme';
+  const SITE_THEMES = Object.freeze([
+    {id:'classic', name:'Classic', logo:'✦', title:'Классика'},
+    {id:'dark', name:'Dark', logo:'🌙', title:'Тёмная'},
+    {id:'light', name:'Light', logo:'☀', title:'Светлая'},
+    {id:'vitality', name:'Vitality', logo:'VIT', title:'Team Vitality'},
+    {id:'falcons', name:'Falcons', logo:'FLC', title:'Team Falcons'},
+    {id:'fnatic', name:'Fnatic', logo:'FNC', title:'Fnatic'},
+    {id:'9z', name:'9z', logo:'9Z', title:'9z Team'},
+    {id:'spirit', name:'Spirit', logo:'TS', title:'Team Spirit'},
+    {id:'vp', name:'VP', logo:'VP', title:'Virtus.pro'},
+    {id:'cloud9', name:'Cloud9', logo:'C9', title:'Cloud9'},
+    {id:'navi', name:'NAVI', logo:'NAVI', title:'Natus Vincere'},
+    {id:'faze', name:'FaZe', logo:'FZ', title:'FaZe Clan'},
+    {id:'parivision', name:'PARI', logo:'PV', title:'PARIVISION'}
+  ]);
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -507,7 +523,9 @@
 
   async function boot(){
     try{
+      applySavedTheme();
       addToasts();
+      initThemeSwitcher();
       initIOSViewport();
       initScrollFix();
       initResponsiveMenu();
@@ -550,7 +568,7 @@
       }).catch(e => console.warn('background catalog failed', e));
     }catch(err){
       console.error('Boot failed, emergency mode:', err);
-      try{ addToasts(); }catch(e){}
+      try{ applySavedTheme(); addToasts(); initThemeSwitcher(); }catch(e){}
       try{ bindEvents(); initMobileTapBridge(); initV30MobileActionPatch(); }catch(e){}
       try{ catalog = buildOfflineCatalog(); updateHeroShowcase(); route(); renderGlobals(); }catch(e){}
       try{ toast('Включён аварийный мобильный режим. Обнови страницу, если интерфейс загрузился не полностью.','warn'); }catch(e){}
@@ -1108,6 +1126,52 @@
     const show = seasonalPassAvailable();
     $$('.js-seasonal-pass-link').forEach(a => { a.style.display = show ? '' : 'none'; });
   }
+  function getTheme(id){ return SITE_THEMES.find(t => t.id === id) || SITE_THEMES[0]; }
+  function savedThemeId(){
+    try{ return localStorage.getItem(THEME_KEY) || 'classic'; }catch(e){ return 'classic'; }
+  }
+  function applyTheme(id, persist=false){
+    const theme = getTheme(id);
+    document.documentElement.dataset.theme = theme.id;
+    document.documentElement.style.colorScheme = theme.id === 'light' ? 'light' : 'dark';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if(meta){
+      const colors = {classic:'#090c13',dark:'#05070d',light:'#f3f7ff',vitality:'#f4d000',falcons:'#10261d',fnatic:'#ff5a00','9z':'#6d28d9',spirit:'#2d72ff',vp:'#ff7a00',cloud9:'#00a7e1',navi:'#ffd400',faze:'#e10600',parivision:'#8b5cf6'};
+      meta.setAttribute('content', colors[theme.id] || '#090c13');
+    }
+    if(persist){ try{ localStorage.setItem(THEME_KEY, theme.id); }catch(e){} }
+    $$('.theme-toggle').forEach(btn => {
+      btn.innerHTML = `<span class="theme-badge theme-badge-${esc(theme.id)}">${esc(theme.logo)}</span>`;
+      btn.title = `Тема: ${theme.title}`;
+      btn.setAttribute('aria-label', `Сменить тему. Сейчас: ${theme.title}`);
+    });
+    $$('.theme-choice').forEach(btn => btn.classList.toggle('active', btn.dataset.themeChoice === theme.id));
+    return theme;
+  }
+  function applySavedTheme(){ applyTheme(savedThemeId(), false); }
+  function initThemeSwitcher(){
+    applySavedTheme();
+    const navrow = $('.navrow'); if(!navrow || $('.theme-switcher', navrow)) return;
+    const current = getTheme(savedThemeId());
+    const choices = SITE_THEMES.map(t => `<button type="button" class="theme-choice" data-theme-choice="${esc(t.id)}" title="${esc(t.title)}"><span class="theme-badge theme-badge-${esc(t.id)}">${esc(t.logo)}</span><b>${esc(t.name)}</b></button>`).join('');
+    navrow.insertAdjacentHTML('afterbegin', `<div class="theme-switcher"><button type="button" class="theme-toggle" aria-haspopup="true" aria-expanded="false" aria-label="Сменить тему"><span class="theme-badge theme-badge-${esc(current.id)}">${esc(current.logo)}</span></button><div class="theme-panel" role="menu"><div class="theme-panel-title">Тема сайта</div>${choices}</div></div>`);
+    const wrap = $('.theme-switcher', navrow);
+    const toggle = $('.theme-toggle', wrap);
+    const close = () => { wrap.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); };
+    const open = () => { wrap.classList.add('open'); toggle.setAttribute('aria-expanded','true'); };
+    toggle.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); wrap.classList.contains('open') ? close() : open(); });
+    wrap.addEventListener('click', e => {
+      const btn = e.target.closest('[data-theme-choice]');
+      if(!btn) return;
+      e.preventDefault();
+      applyTheme(btn.dataset.themeChoice, true);
+      close();
+      toast(`Тема: ${getTheme(btn.dataset.themeChoice).title}`, 'good');
+    });
+    document.addEventListener('click', e => { if(!wrap.contains(e.target)) close(); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
+    applySavedTheme();
+  }
   function addToasts(){ if(!$('.toast-wrap')) document.body.insertAdjacentHTML('beforeend','<div class="toast-wrap"></div>'); }
   function toast(text,type=''){
     const wrap = $('.toast-wrap'); if(!wrap) return;
@@ -1127,7 +1191,16 @@
   function addLive(user,item){ live.unshift({user,item,value:item.value||0}); live=live.slice(0,18); renderLive(); }
   function renderLive(){
     const root = $('#liveFeed'); if(!root) return;
-    root.innerHTML = live.map(x => `<div class="live-card" style="--rar:${x.item.rarityColor||'#60a5fa'}">${imgTag(x.item.image, x.item.name)}<div><b>${esc(x.user)} выбил</b><small>${esc(x.item.name)} · ${fmt(x.value)}</small></div></div>`).join('');
+    if(!Array.isArray(live) || !live.length) seedLive(true);
+    const safe = (live || []).filter(x => x && x.item).slice(0, 14);
+    if(!safe.length){ root.innerHTML = '<div class="live-empty">Live drops загружаются...</div>'; return; }
+    const card = x => {
+      const it = x.item || {};
+      const art = imgTag(it.image, it.name) || `<span class="live-fallback">CS2</span>`;
+      return `<div class="live-card" style="--rar:${it.rarityColor||'#60a5fa'}">${art}<div><b>${esc(x.user||'bot')} выбил</b><small>${esc(it.name||'CS2 item')} · ${fmt(x.value||it.value||0)}</small></div></div>`;
+    };
+    const html = safe.map(card).join('');
+    root.innerHTML = `<div class="live-track">${html}${html}</div>`;
   }
 
   function statCards(){ return `<div class="grid cards-4"><div class="stat"><small>Баланс</small><b class="js-balance">${fmt(state.balance)}</b></div><div class="stat"><small>Предметов</small><b>${state.inventory.length}</b></div><div class="stat"><small>Открыто кейсов</small><b>${state.opened}</b></div><div class="stat"><small>Заработано</small><b>${fmt(state.earned)}</b></div></div>`; }
