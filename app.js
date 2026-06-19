@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '19.0.0';
+  const VERSION = '20.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -17,12 +17,12 @@
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
   const RUB_PER_USD = 92;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v19';
+  const PRICE_VERSION = 'market-rub-v20';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
   const PROMO_CODES = Object.freeze({
-    WELCOME19: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
+    WELCOME20: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
     KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 50000, TEST100K: 100000
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
@@ -569,7 +569,7 @@
     const c = color || '#ff7a18';
     const c2 = c === '#22c55e' ? '#064e3b' : c === '#ef4444' ? '#7f1d1d' : c === '#4b69ff' ? '#1e3a8a' : c === '#8b5cf6' ? '#4c1d95' : c === '#ec4899' ? '#831843' : '#111827';
     const icon = /knife/i.test(name) ? '★' : /glove/i.test(name) ? '✋' : /sticker|capsule|tournament/i.test(name) ? '◆' : /agent/i.test(name) ? '♟' : /charm|keychain/i.test(name) ? '✦' : /patch/i.test(name) ? '⬢' : /green/i.test(name) ? 'GREEN' : /red|covert/i.test(name) ? 'RED' : /blue|mil/i.test(name) ? 'BLUE' : /pink|classified/i.test(name) ? 'PINK' : 'CS2';
-    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v190c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
+    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v200c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
   }
   function createSpecialCase(idv,name,rar,pool,price,text){
     pool = (pool || []).filter(Boolean).slice(0,240);
@@ -614,51 +614,39 @@
   }
   function rarityColor(raw,r){ return (raw.rarity && raw.rarity.color) || raw.color || rarityColors[r] || '#60a5fa'; }
   function applySteamLikePrice(it){
-    const name = String(it.name || '');
+    const name = String(it.name || it.marketHashName || '');
     const lower = name.toLowerCase();
-    const knownRub = knownMarketRub(lower);
     const rarity = it.rarity || 'Mil-Spec Grade';
     const category = String(it.category || 'skin').toLowerCase();
-    const baseRub = {
-      'Consumer Grade': 8, 'Base Grade': 10, 'Industrial Grade': 28, 'Mil-Spec Grade': 95,
-      'Restricted': 330, 'Classified': 1250, 'Covert': 4300, 'Contraband': 520000,
-      'Exceedingly Rare': 26000, 'Extraordinary': 22000,
-      'High Grade': 45, 'Remarkable': 190, 'Exotic': 820,
-      'Distinguished': 420, 'Exceptional': 950, 'Superior': 2100, 'Master': 5200,
-      'Master Agent': 5200, 'Superior Agent': 2100, 'Exceptional Agent': 950, 'Distinguished Agent': 420
+    const knownRub = knownMarketRub(lower);
+    const rarityBase = {
+      'Consumer Grade': 18, 'Base Grade': 25, 'Industrial Grade': 65, 'Mil-Spec Grade': 170,
+      'Restricted': 620, 'Classified': 2300, 'Covert': 7800, 'Contraband': 520000,
+      'Exceedingly Rare': 36000, 'Extraordinary': 32000,
+      'High Grade': 65, 'Remarkable': 360, 'Exotic': 1350,
+      'Distinguished': 520, 'Exceptional': 1350, 'Superior': 3200, 'Master': 7600,
+      'Master Agent': 7600, 'Superior Agent': 3200, 'Exceptional Agent': 1350, 'Distinguished Agent': 520
     };
-    let rub = knownRub || baseRub[rarity] || 120;
+    let rub = knownRub || rarityBase[rarity] || 180;
 
     if(!knownRub){
-      const premiumWeapon = /ak-47|awp|m4a1-s|m4a4|desert eagle|usp-s/i.test(name) ? 1.55 : 1;
-      const midWeapon = /glock|mac-10|mp9|ssg 08|famas|galil|p250|tec-9/i.test(name) ? 1.12 : 1;
-      const collectorPattern = /printstream|asiimov|neo-noir|hyper beast|bloodsport|empress|vulcan|redline|case hardened|fade|doppler|slaughter|crimson web|gold arabesque|welcome to the jungle|hot rod|icarus fell|blue phosphor/i.test(name) ? 2.1 : 1;
-      rub *= premiumWeapon * midWeapon * collectorPattern;
+      const weaponTier = /ak-47|awp|m4a1-s|m4a4|desert eagle|usp-s/i.test(name) ? 1.65 : /glock|mac-10|mp9|ssg 08|famas|galil|p250|tec-9/i.test(name) ? 1.18 : 1;
+      const collector = /printstream|asiimov|neo-noir|hyper beast|bloodsport|empress|vulcan|redline|case hardened|fade|doppler|slaughter|crimson web|gold arabesque|welcome to the jungle|hot rod|icarus fell|blue phosphor|wild lotus|gungnir|dragon lore|medusa|howl|hydroponic|fire serpent|fuel injector/i.test(name) ? 2.25 : 1;
+      const cheapPattern = /sand dune|safari mesh|predator|storm|urban dashed|forest ddpat|groundwater|boreal forest|scorched|contractor|colony|army sheen/i.test(name) ? 0.38 : 1;
+      const newCaseBump = /kilowatt|revolution|recoil|snakebite|dreams|nightmares|fracture|prisma|clutch|spectrum/i.test(name) ? 1.08 : 1;
+      rub *= weaponTier * collector * cheapPattern * newCaseBump;
 
-      if(name.startsWith('★') || /knife|bayonet|karambit|butterfly|m9|talon|kukri|skeleton|nomad|stiletto|ursus|paracord|survival|classic|flip|gut|navaja|falchion|shadow daggers/i.test(name)){
-        rub = knifeRub(lower);
-      }
-      if(/gloves/i.test(name)){
-        rub = glovesRub(lower);
-      }
-      if(category === 'sticker'){
-        rub = stickerRub(lower, rarity);
-      }
-      if(category === 'patch'){
-        rub = patchRub(lower, rarity);
-      }
-      if(category === 'keychain'){
-        rub = keychainRub(lower, rarity);
-      }
-      if(category === 'agent'){
-        rub = agentRub(lower, rarity);
-      }
-      if(category === 'collectible'){
-        rub *= 0.75;
-      }
+      if(name.startsWith('★') || /knife|bayonet|karambit|butterfly|m9|talon|kukri|skeleton|nomad|stiletto|ursus|paracord|survival|classic|flip|gut|navaja|falchion|shadow daggers/i.test(name)) rub = knifeRub(lower);
+      if(/gloves/i.test(name)) rub = glovesRub(lower);
+      if(category === 'sticker') rub = stickerRub(lower, rarity);
+      if(category === 'patch') rub = patchRub(lower, rarity);
+      if(category === 'keychain') rub = keychainRub(lower, rarity);
+      if(category === 'agent') rub = agentRub(lower, rarity);
+      if(category === 'collectible') rub *= 0.85;
     }
 
-    const noise = knownRub ? (0.94 + stableNoise(name) * 0.12) : (0.62 + stableNoise(name) * 0.86);
+    const volatility = knownRub ? 0.08 : 0.34;
+    const noise = 1 - volatility / 2 + stableNoise(name) * volatility;
     const value = Math.max(3, Math.round(rub * noise));
     return Object.assign({}, it, {
       value,
@@ -671,16 +659,19 @@
   }
   function knownMarketRub(lower){
     const exact = [
-      ['awp | dragon lore', 920000], ['m4a4 | howl', 560000], ['ak-47 | wild lotus', 760000], ['awp | gungnir', 820000], ['awp | medusa', 360000],
-      ['awp | desert hydra', 170000], ['ak-47 | fire serpent', 82000], ['m4a1-s | knight', 150000], ['ak-47 | hydroponic', 155000], ['m4a4 | poseidon', 115000],
-      ['ak-47 | gold arabesque', 135000], ['m4a1-s | hot rod', 90000], ['m4a1-s | blue phosphor', 72000], ['awp | the prince', 210000],
-      ['ak-47 | vulcan', 18000], ['ak-47 | redline', 2600], ['ak-47 | head shot', 3600], ['ak-47 | the empress', 6400], ['ak-47 | bloodsport', 5900],
-      ['awp | asiimov', 11200], ['awp | hyper beast', 6900], ['awp | neo-noir', 3100], ['awp | duality', 950], ['awp | fever dream', 650],
-      ['m4a1-s | printstream', 8300], ['m4a1-s | decimator', 1700], ['m4a1-s | hyper beast', 3600], ['m4a4 | neo-noir', 2900],
-      ['desert eagle | printstream', 6200], ['desert eagle | ocean drive', 2300], ['usp-s | kill confirmed', 7600], ['usp-s | cortex', 850], ['usp-s | printstream', 4600],
-      ['glock-18 | water elemental', 900], ['glock-18 | bullet queen', 1800], ['p250 | asiimov', 760], ['mp9 | food chain', 680], ['mac-10 | neon rider', 1300],
-      ['p90 | death grip', 360], ['ssg 08 | fever dream', 380], ['ump-45 | primal saber', 640], ['famas | mecha industries', 760], ['galil ar | chatterbox', 520],
-      ['sticker | crown', 42000], ['katowice 2014', 28000], ['ibuyPower', 900000], ['titan | katowice 2014', 520000], ['vox eminor | katowice 2014', 90000]
+      ['awp | dragon lore', 950000], ['m4a4 | howl', 580000], ['ak-47 | wild lotus', 780000], ['awp | gungnir', 820000], ['awp | medusa', 380000],
+      ['awp | desert hydra', 175000], ['awp | the prince', 220000], ['ak-47 | fire serpent', 92000], ['ak-47 | hydroponic', 160000], ['ak-47 | gold arabesque', 145000],
+      ['m4a1-s | knight', 155000], ['m4a4 | poseidon', 120000], ['m4a1-s | hot rod', 95000], ['m4a1-s | blue phosphor', 76000], ['m4a1-s | icarus fell', 44000],
+      ['ak-47 | vulcan', 18500], ['ak-47 | fuel injector', 14000], ['ak-47 | bloodsport', 6500], ['ak-47 | the empress', 6200], ['ak-47 | head shot', 4200], ['ak-47 | redline', 2700], ['ak-47 | legion of anubis', 2100], ['ak-47 | ice coaled', 1500],
+      ['awp | asiimov', 11800], ['awp | hyper beast', 6900], ['awp | neo-noir', 3300], ['awp | containment breach', 7800], ['awp | chromatic aberration', 3200], ['awp | duality', 900], ['awp | fever dream', 620], ['awp | paw', 380],
+      ['m4a1-s | printstream', 8800], ['m4a1-s | hyper beast', 3800], ['m4a1-s | decimator', 1850], ['m4a1-s | nightmare', 1300], ['m4a1-s | player two', 3100], ['m4a1-s | leaded glass', 850],
+      ['m4a4 | neo-noir', 3100], ['m4a4 | the emperor', 3400], ['m4a4 | desolate space', 1700], ['m4a4 | in living color', 1800], ['m4a4 | temukau', 5600],
+      ['desert eagle | printstream', 6500], ['desert eagle | ocean drive', 2500], ['desert eagle | code red', 2600], ['desert eagle | golden koi', 5200], ['desert eagle | conspiracy', 1100],
+      ['usp-s | kill confirmed', 7800], ['usp-s | printstream', 4800], ['usp-s | the traitor', 3200], ['usp-s | cortex', 820], ['usp-s | neo-noir', 2200],
+      ['glock-18 | gamma doppler', 2600], ['glock-18 | bullet queen', 1700], ['glock-18 | water elemental', 920], ['glock-18 | vogue', 680], ['glock-18 | moonrise', 240],
+      ['p250 | asiimov', 780], ['p250 | see ya later', 650], ['tec-9 | fuel injector', 650], ['tec-9 | isaac', 190], ['five-seven | hyper beast', 1800], ['five-seven | fairy tale', 950],
+      ['mp9 | food chain', 720], ['mp9 | starlight protector', 1200], ['mac-10 | neon rider', 1350], ['mac-10 | disco tech', 780], ['p90 | death grip', 380], ['ssg 08 | fever dream', 390], ['ump-45 | primal saber', 680], ['famas | mecha industries', 820], ['galil ar | chatterbox', 560],
+      ['sticker | crown', 45000], ['sticker | howl', 42000], ['katowice 2014', 32000], ['ibuyPower | katowice 2014', 920000], ['titan | katowice 2014', 540000], ['vox eminor | katowice 2014', 92000], ['reason gaming | katowice 2014', 250000], ['dignitas | katowice 2014', 180000]
     ];
     const found = exact.find(([key]) => lower.includes(String(key).toLowerCase()));
     return found ? found[1] : 0;
@@ -785,6 +776,7 @@
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return; }
       if(a === 'do-upgrade') return doUpgrade();
       if(a === 'sell-cheap') return sellCheap();
+      if(a === 'sell-all-inventory') return sellAllInventory();
       if(a === 'reset-save') return resetSave();
       if(a === 'export-save') return exportSave();
       if(a === 'import-save') return importSave();
@@ -1031,21 +1023,35 @@
     const prevQ = ($('#invSearch') && $('#invSearch').value || '').toLowerCase().trim();
     const prevR = $('#invRarity') ? $('#invRarity').value : 'all';
     const prevS = $('#invSort') ? $('#invSort').value : 'new';
-    const rarities = [...new Set(state.inventory.map(x=>x.rarity).filter(Boolean))].sort((a,b)=>(rarityValue[b]||0)-(rarityValue[a]||0));
+    const fullInv = [...state.inventory].map(normalizeInvItem).filter(Boolean);
+    const fullTotal = fullInv.reduce((sum,x)=>sum + toNum(x.value,0),0);
+    const avgValue = fullInv.length ? Math.round(fullTotal / fullInv.length) : 0;
+    const rarities = [...new Set(fullInv.map(x=>x.rarity).filter(Boolean))].sort((a,b)=>(rarityValue[b]||0)-(rarityValue[a]||0));
     if(controls){
-      controls.innerHTML = `<input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select><button class="small-btn" data-action="sell-cheap">Продать дешевле 200 ₽LC</button>`;
+      controls.innerHTML = `<div class="inventory-topline"><div class="inv-total-card"><small>Стоимость инвентаря</small><b>${fmt(fullTotal)}</b><span>${fullInv.length} предметов · среднее ${fmt(avgValue)}</span></div><div class="inv-total-actions"><button class="btn green" data-action="sell-all-inventory" ${fullInv.length?'':'disabled'}>Продать всё</button><button class="small-btn" data-action="sell-cheap" ${fullInv.length?'':'disabled'}>Продать дешевле 200 ₽LC</button></div></div><div class="filters"><input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select></div>`;
     }
     const q = ($('#invSearch') && $('#invSearch').value || prevQ).toLowerCase().trim();
     const r = $('#invRarity') ? $('#invRarity').value : prevR;
     const srt = $('#invSort') ? $('#invSort').value : prevS;
-    let arr = [...state.inventory].map(normalizeInvItem).filter(Boolean);
+    let arr = [...fullInv];
     if(q) arr = arr.filter(x => (x.displayName||x.name).toLowerCase().includes(q));
     if(r !== 'all') arr = arr.filter(x => x.rarity === r);
     if(srt === 'valueDesc') arr.sort((a,b)=>b.value-a.value);
     else if(srt === 'valueAsc') arr.sort((a,b)=>a.value-b.value);
     else if(srt === 'rarity') arr.sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0));
     else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
-    root.innerHTML = arr.length ? `<div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо. Если только что обновлял сайт на GitHub Pages — нажми Ctrl+F5, чтобы браузер не держал старый cache.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
+    const visibleTotal = arr.reduce((sum,x)=>sum + toNum(x.value,0),0);
+    root.innerHTML = arr.length ? `<div class="notice inv-visible-summary"><b>Показано:</b> ${arr.length} из ${fullInv.length} предметов · сумма видимых: <b>${fmt(visibleTotal)}</b></div><div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо. Если только что обновлял сайт на GitHub Pages — нажми Ctrl+F5, чтобы браузер не держал старый cache.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
+  }
+  function sellAllInventory(){
+    const items = [...state.inventory].map(normalizeInvItem).filter(Boolean);
+    if(!items.length) return toast('Инвентарь пуст','warn');
+    const total = Math.round(items.reduce((sum,x)=>sum + toNum(x.value,0),0));
+    if(!confirm(`Продать весь инвентарь: ${items.length} предметов за ${fmt(total)}?`)) return;
+    removeItems(items.map(x=>x.uid));
+    state.sold += total;
+    earn(total, `Продажа всего инвентаря x${items.length}`);
+    renderInventory();
   }
   function sellCheap(){
     const cheap = state.inventory.filter(x => x.value < 200);
@@ -1399,7 +1405,7 @@
     const root = $('#promosRoot'); if(!root) return;
     const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
     const totalCodes = Object.keys(PROMO_CODES).length;
-    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME19</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME20</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
   }
   function redeemPromo(){
     const input = $('#promoInput');
