@@ -1,672 +1,548 @@
-(() => {
+(function(){
   'use strict';
 
-  const DATA = window.CS2_DATA || {rarities:{},items:[],cases:[],projects:[]};
-  const {rarities, items, cases, projects} = DATA;
-  const STORAGE_KEY = 'cs2_case_lab_v3_state';
-  const OLD_KEYS = ['cs2CaseLabV2','cs2CaseLab'];
+  const API_CRATES = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/crates.json';
+  const LS_KEY = 'cs2_case_lab_v4_state';
+  const CATALOG_CACHE = 'cs2_case_lab_v4_catalog_cache';
+  const CATALOG_TTL = 1000 * 60 * 60 * 12;
+
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-  const fmt = n => Math.round(Number(n)||0).toLocaleString('ru-RU');
-  const safe = s => String(s ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch]));
-  const uid = () => 'it_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
-  const clamp = (n,min,max) => Math.max(min, Math.min(max, n));
-  const now = () => Date.now();
-  const bots = ['RUSH_B','AKIMBO','NEONFOX','DUSTY','MIRAGE_KING','BYTEBOT','AWP_CAT','ECO_PRO','KARAMBITO','DE_NUKE'];
-  const liveNames = ['xEfim','dropHunter','MirageFan','Bot Denis','CaseFox','AWP Enjoyer','EcoKing','Rush B','LabUser','KnifeDream'];
+  const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const clamp = (n,a,b) => Math.max(a, Math.min(b, n));
+  const money = n => `${Math.round(Number(n)||0).toLocaleString('ru-RU')} LC`;
+  const uid = () => (crypto?.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
+  const rand = (a,b) => a + Math.random() * (b-a);
+  const sample = arr => arr[Math.floor(Math.random() * arr.length)];
 
-  const itemById = id => items.find(x => x.id === id) || null;
-  const caseById = id => cases.find(x => x.id === id) || cases[0];
-  const rarityOf = obj => rarities[obj?.rarity] || rarities.consumer || {label:'Common',color:'#9aa8c7',weight:1,order:1};
+  const rarityColors = {
+    'Consumer Grade':'#b0c3d9','Base Grade':'#b0c3d9','Industrial Grade':'#5e98d9','Mil-Spec Grade':'#4b69ff',
+    'Restricted':'#8847ff','Classified':'#d32ce6','Covert':'#eb4b4b','Exceedingly Rare':'#ffd700','Extraordinary':'#eb4b4b',
+    'Contraband':'#e4ae33','High Grade':'#4b69ff','Remarkable':'#8847ff','Exotic':'#d32ce6'
+  };
+  const rarityBase = {
+    'Consumer Grade':45,'Base Grade':35,'Industrial Grade':85,'Mil-Spec Grade':175,'Restricted':430,
+    'Classified':1050,'Covert':2800,'Exceedingly Rare':9000,'Extraordinary':7600,'Contraband':15000,
+    'High Grade':180,'Remarkable':420,'Exotic':900
+  };
+  const rarityWeight = {
+    'Consumer Grade':92,'Industrial Grade':88,'Mil-Spec Grade':79.92,'Restricted':15.98,'Classified':3.2,
+    'Covert':0.64,'Exceedingly Rare':0.26,'Extraordinary':0.26,'Contraband':0.04
+  };
+  const wearMap = [
+    {name:'Factory New', mult:1.38, min:0.00, max:0.07},
+    {name:'Minimal Wear', mult:1.13, min:0.07, max:0.15},
+    {name:'Field-Tested', mult:.93, min:0.15, max:0.38},
+    {name:'Well-Worn', mult:.74, min:0.38, max:0.45},
+    {name:'Battle-Scarred', mult:.62, min:0.45, max:0.99}
+  ];
+  const names = ['MIRAGEKING','EfimDrop','CaseFan','Headshotter','NAVIboy','donk_lover','FlashMe','AWP_ORACLE','bananaPeek','PixelPro','KnifeHunter','Zheka','SmokeBoss','ClutchMe','RUSH_B'];
 
-  function defaultState(){
-    return {
-      version: 3,
-      balance: 3500,
-      inventory: [],
-      history: [],
-      opened: 0,
-      bestId: null,
-      bestValue: 0,
-      selectedUpgrade: null,
-      contractBasket: [],
-      wheelRotation: 0,
-      lastWheel: 0,
-      lastDaily: 0,
-      usedPromos: [],
-      stats: {spent:0, earned:0, ads:0, upgrades:0, upgradeWins:0, battles:0, battleWins:0, contracts:0}
-    };
-  }
+  const fallbackCaseImg = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 380"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#f59e0b"/><stop offset="1" stop-color="#ef4444"/></linearGradient></defs><rect x="94" y="118" width="324" height="210" rx="34" fill="#141b2e" stroke="#334155" stroke-width="12"/><path d="M158 118v-30c0-28 20-48 48-48h100c28 0 48 20 48 48v30" fill="none" stroke="#475569" stroke-width="18"/><rect x="132" y="155" width="248" height="130" rx="24" fill="url(#g)" opacity=".95"/><text x="256" y="235" font-family="Arial" font-weight="900" font-size="64" fill="#111827" text-anchor="middle">CS2</text></svg>`);
+  const fallbackWeaponImg = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 260"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#60a5fa"/><stop offset=".5" stop-color="#8b5cf6"/><stop offset="1" stop-color="#f59e0b"/></linearGradient></defs><path d="M74 142h288l33-34h78c22 0 42 16 48 37l14 52h-74l-14-37h-82l-42 50h-78l43-50H168l-23 32H85l20-37H72c-30 0-30-13 2-13z" fill="url(#g)"/><path d="M126 116h156l25-35h82l-34 35h68c17 0 30 13 30 30H92c0-17 15-30 34-30z" fill="#cbd5e1" opacity=".22"/><circle cx="482" cy="193" r="20" fill="#0f172a"/><text x="302" y="72" font-family="Arial" font-weight="900" font-size="38" fill="#fff" text-anchor="middle">CS2 SKIN</text></svg>`);
 
-  function createInstance(item, source='drop'){
-    if(!item) item = items[0];
-    return {uid: uid(), itemId: item.id, name: item.name, kind: item.kind, rarity: item.rarity, value: Number(item.value)||0, image: item.image, source, obtained: new Date().toISOString()};
-  }
+  const fallbackCatalog = {
+    source: 'fallback',
+    items: [
+      ['ak47_redline','AK-47 | Redline','Classified', 1450],['ak47_vulcan','AK-47 | Vulcan','Covert', 3800],['ak47_asiimov','AK-47 | Asiimov','Covert', 3300],
+      ['m4a1s_printstream','M4A1-S | Printstream','Covert', 4200],['m4a4_neo_noir','M4A4 | Neo-Noir','Covert', 2700],['awp_asiimov','AWP | Asiimov','Covert', 5200],
+      ['awp_hyperbeast','AWP | Hyper Beast','Covert', 3900],['deagle_printstream','Desert Eagle | Printstream','Covert', 2300],['usp_kill_confirmed','USP-S | Kill Confirmed','Covert', 3400],
+      ['glock_water_elemental','Glock-18 | Water Elemental','Classified', 980],['ak47_ice_coaled','AK-47 | Ice Coaled','Classified', 1150],['m4a1s_decimator','M4A1-S | Decimator','Classified', 1250],
+      ['famas_mecha','FAMAS | Mecha Industries','Classified', 900],['mp9_food_chain','MP9 | Food Chain','Classified', 850],['p250_asiimov','P250 | Asiimov','Classified', 720],
+      ['usp_cortex','USP-S | Cortex','Classified', 760],['ak47_slate','AK-47 | Slate','Restricted', 410],['m4a4_desolate_space','M4A4 | Desolate Space','Classified', 980],
+      ['awp_duality','AWP | Duality','Classified', 880],['mac10_neon_rider','MAC-10 | Neon Rider','Covert', 1750],['five_seven_angry_mob','Five-SeveN | Angry Mob','Covert', 1600],
+      ['tec9_isaac','Tec-9 | Isaac','Mil-Spec Grade', 210],['dual_hideout','Dual Berettas | Hideout','Mil-Spec Grade', 180],['mp7_just_smile','MP7 | Just Smile','Restricted', 390],
+      ['ssg08_fever_dream','SSG 08 | Fever Dream','Restricted', 360],['ump_primal_saber','UMP-45 | Primal Saber','Classified', 870],['p90_death_grip','P90 | Death Grip','Restricted', 420],
+      ['knife_kukri','★ Kukri Knife','Exceedingly Rare', 8500],['knife_butterfly','★ Butterfly Knife','Exceedingly Rare', 12500],['gloves_sport','★ Sport Gloves','Extraordinary', 9800]
+    ].map(([id,name,rarity,value]) => ({id,name,rarity,rarityColor:rarityColors[rarity]||'#60a5fa',value,image:fallbackWeaponImg,weight:rarityWeight[rarity]||10})),
+    cases: []
+  };
+  fallbackCatalog.cases = [
+    {id:'kilowatt',name:'Kilowatt Case',price:650,image:fallbackCaseImg,items:fallbackCatalog.items.slice(0,14).concat(fallbackCatalog.items.slice(-3)),source:'fallback'},
+    {id:'dreams',name:'Dreams & Nightmares Case',price:540,image:fallbackCaseImg,items:fallbackCatalog.items.slice(6,24).concat(fallbackCatalog.items.slice(-3)),source:'fallback'},
+    {id:'premium',name:'Covert Premium Case',price:1450,image:fallbackCaseImg,items:fallbackCatalog.items.filter(x=>['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(x.rarity)),source:'fallback'}
+  ];
 
-  function normalizeInstance(raw){
-    if(!raw) return null;
-    const item = itemById(raw.itemId) || itemById(raw.id) || items.find(x => x.name === raw.name) || items[0];
-    if(!item) return null;
-    return {
-      uid: raw.uid || uid(),
-      itemId: item.id,
-      name: item.name,
-      kind: item.kind,
-      rarity: item.rarity,
-      value: Number(raw.value || item.value) || item.value,
-      image: item.image,
-      source: raw.source || 'legacy',
-      obtained: raw.obtained || new Date().toISOString()
-    };
-  }
+  let catalog = null;
+  let state = loadState();
+  let liveTemp = [];
+  let selectedCaseId = null;
+  let spinning = false;
+  let currentDrop = null;
+  let wheelDeg = 0;
 
-  function normalizeState(raw){
-    const base = defaultState();
-    if(!raw || typeof raw !== 'object') return base;
-    const st = {...base, ...raw};
-    st.version = 3;
-    st.balance = Number(st.balance || 0);
-    st.inventory = Array.isArray(raw.inventory) ? raw.inventory.map(normalizeInstance).filter(Boolean) : [];
-    st.history = Array.isArray(raw.history) ? raw.history.slice(0,80) : [];
-    st.contractBasket = Array.isArray(raw.contractBasket) ? raw.contractBasket.filter(id => st.inventory.some(x => x.uid === id)).slice(0,10) : [];
-    st.usedPromos = Array.isArray(raw.usedPromos) ? raw.usedPromos : [];
-    st.stats = {...base.stats, ...(raw.stats || {})};
-    st.opened = Number(st.opened || 0);
-    const best = st.inventory.reduce((a,b)=> b.value > (a?.value || 0) ? b : a, null);
-    if(best){ st.bestId = best.itemId; st.bestValue = best.value; }
-    return st;
+  document.addEventListener('DOMContentLoaded', init);
+
+  async function init(){
+    try{
+      addToastWrap();
+      setActiveNav();
+      renderGlobals();
+      seedLive();
+      renderLive();
+      setInterval(fakeLiveTick, 4200);
+      bindGlobalActions();
+      catalog = await getCatalog();
+      renderGlobals();
+      await route();
+    }catch(err){
+      console.error(err);
+      toast('Ошибка JS: '+err.message, 'bad');
+      const main = $('main');
+      if(main) main.insertAdjacentHTML('afterbegin', `<div class="container"><div class="notice danger-zone"><b>JS упал.</b> Открой консоль браузера и пришли ошибку. Я добавил защиту, поэтому остальные блоки должны продолжить работать.</div></div>`);
+    }
   }
 
   function loadState(){
+    let raw = null;
+    try{ raw = JSON.parse(localStorage.getItem(LS_KEY)||'null'); }catch(e){}
+    const base = {balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,live:[],tx:[],pendingUpgrade:null,contractSelected:[],lastAd:0,lastWheel:0,createdAt:Date.now()};
+    return Object.assign(base, raw||{});
+  }
+  function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); renderGlobals(); }
+  function tx(text, amount=0){
+    state.tx.unshift({id:uid(), text, amount, time:Date.now()});
+    state.tx = state.tx.slice(0,50);
+  }
+  function earn(amount, reason='Начисление'){
+    amount = Math.max(0, Math.round(amount));
+    state.balance += amount; state.earned += amount; tx(reason, amount); save(); toast(`+${money(amount)} · ${reason}`, 'good');
+  }
+  function spend(amount, reason='Списание'){
+    amount = Math.max(0, Math.round(amount));
+    if(state.balance < amount){ toast(`Недостаточно LabCoins: нужно ${money(amount)}`, 'bad'); return false; }
+    state.balance -= amount; state.spent += amount; tx(reason, -amount); save(); return true;
+  }
+  function addInventoryItem(item, source='case'){
+    const wear = sample(wearMap);
+    const stattrak = Math.random() < 0.08 && !item.name.startsWith('★');
+    const float = rand(wear.min, wear.max).toFixed(5);
+    const value = Math.max(1, Math.round((item.value||100) * wear.mult * (stattrak?1.55:1) * rand(.86,1.18)));
+    const inv = {...item, uid:uid(), baseId:item.id, wear:wear.name, float, stattrak, displayName:(stattrak?'StatTrak™ ':'') + item.name, value, addedAt:Date.now(), source};
+    state.inventory.unshift(inv); state.inventory = state.inventory.slice(0,500); save(); return inv;
+  }
+  function removeInventory(uids){
+    const set = new Set(Array.isArray(uids)?uids:[uids]);
+    state.inventory = state.inventory.filter(it => !set.has(it.uid)); save();
+  }
+  function sellItem(uid){
+    const it = state.inventory.find(x=>x.uid===uid); if(!it) return;
+    removeInventory(uid); state.sold += it.value; earn(it.value, `Продажа ${it.displayName||it.name}`); renderRouteOnly();
+  }
+
+  async function getCatalog(){
     try{
-      let raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw){
-        for(const key of OLD_KEYS){ raw = localStorage.getItem(key); if(raw) break; }
-      }
-      return normalizeState(raw ? JSON.parse(raw) : null);
-    }catch(err){ console.warn('state load failed', err); return defaultState(); }
-  }
-
-  let state = loadState();
-  function save(){
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    updateWallet();
-  }
-  function updateWallet(){
-    $$('.js-balance').forEach(el => el.textContent = fmt(state.balance));
-    $$('.js-inv-count').forEach(el => el.textContent = fmt(state.inventory.length));
-  }
-  function addCoins(amount, reason=''){
-    amount = Math.max(0, Math.round(Number(amount)||0));
-    state.balance += amount;
-    state.stats.earned += amount;
-    save();
-    if(reason) toast(`${safe(reason)}: +◆ ${fmt(amount)}`);
-  }
-  function spendCoins(amount){
-    amount = Math.round(Number(amount)||0);
-    if(amount <= 0) return true;
-    if(state.balance < amount) return false;
-    state.balance -= amount;
-    state.stats.spent += amount;
-    save();
-    return true;
-  }
-  function setBest(inst){
-    if(inst && inst.value > (state.bestValue || 0)){ state.bestId = inst.itemId; state.bestValue = inst.value; }
-  }
-  function addHistory(inst, meta={}){
-    if(!inst) return;
-    state.history.unshift({uid:inst.uid,itemId:inst.itemId,name:inst.name,value:inst.value,rarity:inst.rarity,source:inst.source,caseName:meta.caseName || inst.source || '',time:Date.now()});
-    state.history = state.history.slice(0,80);
-  }
-  function addInventory(inst, meta={}){
-    state.inventory.unshift(inst);
-    setBest(inst);
-    addHistory(inst, meta);
-    save();
-  }
-
-  function pickWeighted(poolIds){
-    const pool = poolIds.map(itemById).filter(Boolean);
-    if(!pool.length) return items[0];
-    const total = pool.reduce((s,it)=>s + (rarityOf(it).weight || 1), 0);
-    let roll = Math.random() * total;
-    for(const item of pool){
-      roll -= rarityOf(item).weight || 1;
-      if(roll <= 0) return item;
+      const cached = JSON.parse(sessionStorage.getItem(CATALOG_CACHE)||'null');
+      if(cached && Date.now()-cached.time < CATALOG_TTL && cached.data?.cases?.length){ return cached.data; }
+    }catch(e){}
+    try{
+      const res = await fetch(API_CRATES, {cache:'force-cache'});
+      if(!res.ok) throw new Error('catalog http '+res.status);
+      const crates = await res.json();
+      const data = buildCatalogFromCrates(crates);
+      if(data.cases.length < 3) throw new Error('catalog empty');
+      try{ sessionStorage.setItem(CATALOG_CACHE, JSON.stringify({time:Date.now(), data})); }catch(e){}
+      return data;
+    }catch(err){
+      console.warn('Using fallback catalog', err);
+      toast('Онлайн-каталог CS2 не загрузился, включил резервный пул. На GitHub Pages с интернетом подтянутся настоящие изображения.', 'bad');
+      return fallbackCatalog;
     }
-    return pool[0];
-  }
-  function chooseByValue(min, max){
-    const candidates = items.filter(it => it.value >= min && it.value <= max);
-    if(candidates.length) return candidates[Math.floor(Math.random()*candidates.length)];
-    const mid = (min + max) / 2;
-    return [...items].sort((a,b)=>Math.abs(a.value-mid)-Math.abs(b.value-mid))[0];
   }
 
-  function renderHeader(){
-    const header = $('#siteHeader');
-    if(!header) return;
-    const page = (document.body.dataset.page || location.pathname.split('/').pop() || 'index.html').replace(/^\//,'');
-    const nav = [
-      ['index.html','Главная'], ['cases.html','Кейсы'], ['battle.html','Баттлы'], ['upgrade.html','Апгрейд'],
-      ['contracts.html','Контракты'], ['wheel.html','Бонусы'], ['inventory.html','Инвентарь'], ['ads.html','Реклама'], ['profile.html','Профиль']
-    ];
-    header.innerHTML = `
-      <a class="brand" href="index.html"><span class="brand-mark">CL</span><span><b>CS2 Case Lab</b><small>local simulator</small></span></a>
-      <button class="mobile-toggle" id="mobileToggle" aria-label="Меню">☰</button>
-      <nav class="nav" id="mainNav">${nav.map(([href,label])=>`<a class="${href===page?'active':''}" href="${href}">${label}</a>`).join('')}</nav>
-      <a class="wallet" href="inventory.html"><span class="coin">◆</span><strong class="js-balance">${fmt(state.balance)}</strong><span>LabCoins</span><em class="js-inv-count">${state.inventory.length}</em></a>`;
-    $('#mobileToggle')?.addEventListener('click', () => $('#mainNav')?.classList.toggle('open'));
+  function buildCatalogFromCrates(crates){
+    const preferred = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Prisma 2 Case','Clutch Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case'];
+    const onlyCases = crates.filter(c => c && c.type === 'Case' && Array.isArray(c.contains) && c.contains.length >= 6);
+    const picked = [];
+    preferred.forEach(name => { const found = onlyCases.find(c => c.name === name); if(found && !picked.includes(found)) picked.push(found); });
+    onlyCases.slice(0,20).forEach(c => { if(picked.length < 14 && !picked.includes(c)) picked.push(c); });
+    const allItems = new Map();
+    const cases = picked.slice(0,14).map((c,idx) => {
+      const items = [];
+      [...(c.contains||[]), ...(c.contains_rare||[])].forEach(raw => {
+        const item = normalizeApiItem(raw);
+        if(!item) return;
+        items.push(item);
+        allItems.set(item.id, item);
+      });
+      const price = calcCasePrice(items, idx);
+      return {id:c.id || slug(c.name), name:c.name, price, image:c.image || fallbackCaseImg, items, source:'ByMykel CSGO-API', firstSaleDate:c.first_sale_date||'', rareText:c.loot_list?.footer||'Редкий спецпредмет внутри'};
+    });
+    return {source:'ByMykel CSGO-API', cases, items:Array.from(allItems.values())};
   }
 
-  let liveRows = [];
-  function randomName(){ return liveNames[Math.floor(Math.random()*liveNames.length)]; }
-  function makeLiveRow(){
-    const c = cases[Math.floor(Math.random()*cases.length)];
-    const it = pickWeighted(c.pool);
-    return {player: randomName(), itemId: it.id, name: it.name, value: it.value, rarity: it.rarity};
+  function normalizeApiItem(raw){
+    if(!raw?.name) return null;
+    const rarity = raw.rarity?.name || 'Mil-Spec Grade';
+    const color = raw.rarity?.color || rarityColors[rarity] || '#60a5fa';
+    const base = rarityBase[rarity] || 160;
+    const nameBoost = raw.name.startsWith('★') ? 1.45 : 1;
+    return {id:raw.id || slug(raw.name), name:raw.name, rarity, rarityColor:color, image:raw.image || fallbackWeaponImg, value:Math.round(base * nameBoost * rand(.85,1.35)), weight:rarityWeight[rarity] || 8, paintIndex:raw.paint_index||'', phase:raw.phase||''};
   }
-  function renderLiveFeed(){
-    const wrap = $('#liveFeed');
-    if(!wrap) return;
-    if(!liveRows.length) liveRows = Array.from({length: 18}, makeLiveRow);
-    wrap.innerHTML = liveRows.map(row => {
-      const it = itemById(row.itemId) || row;
-      const r = rarityOf(it);
-      return `<div class="live-chip rarity-${it.rarity}"><span>${safe(row.player)}</span><b>${safe(it.name.split('|')[0].trim())}</b><em style="color:${r.color}">◆ ${fmt(it.value)}</em></div>`;
-    }).join('');
+  function calcCasePrice(items, idx){
+    const avg = items.reduce((s,it)=>s+(it.value||0),0)/Math.max(1,items.length);
+    return clamp(Math.round(avg * .82 + 380 + idx*35), 420, 2200);
   }
-  function tickLive(){ liveRows.unshift(makeLiveRow()); liveRows = liveRows.slice(0,22); renderLiveFeed(); }
+  function slug(s){ return String(s||'x').toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-|-$/g,''); }
 
-  function toast(message){
-    let box = $('#toastBox');
-    if(!box){ box = document.createElement('div'); box.id = 'toastBox'; box.className = 'toast-box'; document.body.appendChild(box); }
-    const el = document.createElement('div'); el.className = 'toast'; el.innerHTML = message;
-    box.appendChild(el);
-    setTimeout(()=>el.classList.add('show'), 20);
-    setTimeout(()=>{el.classList.remove('show'); setTimeout(()=>el.remove(), 260);}, 3000);
+  function setActiveNav(){
+    const path = location.pathname.split('/').pop() || 'index.html';
+    $$('.navlinks a').forEach(a => {
+      const href = a.getAttribute('href');
+      a.classList.toggle('active', href === path || (path==='' && href==='index.html'));
+    });
   }
-  function openModal(html, cls=''){
-    closeModal();
-    const overlay = document.createElement('div');
-    overlay.className = `modal-overlay ${cls}`;
-    overlay.id = 'activeModal';
-    overlay.innerHTML = `<div class="modal-card">${html}</div>`;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if(e.target === overlay) closeModal(); });
-    document.addEventListener('keydown', escModal);
+  function renderGlobals(){
+    $$('.js-balance').forEach(el => el.textContent = money(state.balance));
+    $$('.js-inv-count').forEach(el => el.textContent = state.inventory.length.toLocaleString('ru-RU'));
   }
-  function escModal(e){ if(e.key === 'Escape') closeModal(); }
-  function closeModal(){ $('#activeModal')?.remove(); document.removeEventListener('keydown', escModal); }
+  function addToastWrap(){ if(!$('.toast-wrap')) document.body.insertAdjacentHTML('beforeend','<div class="toast-wrap"></div>'); }
+  function toast(text,type=''){
+    const wrap = $('.toast-wrap'); if(!wrap) return;
+    const el = document.createElement('div'); el.className = `toast ${type}`; el.textContent = text; wrap.appendChild(el);
+    setTimeout(()=>{ el.style.opacity='0'; el.style.transform='translateY(10px)'; setTimeout(()=>el.remove(),220); }, 4200);
+  }
+  function bindGlobalActions(){
+    document.addEventListener('click', e => {
+      const close = e.target.closest('[data-close-modal]');
+      if(close) closeModal(close.closest('.modal'));
+      const sell = e.target.closest('[data-sell]');
+      if(sell) sellItem(sell.dataset.sell);
+      const upgrade = e.target.closest('[data-upgrade-item]');
+      if(upgrade){ state.pendingUpgrade = upgrade.dataset.upgradeItem; save(); location.href='upgrade.html'; }
+      const contract = e.target.closest('[data-contract-item]');
+      if(contract){ toggleContractSelection(contract.dataset.contractItem); toast('Предмет добавлен/убран из контракта', 'good'); renderRouteOnly(); }
+      const reset = e.target.closest('[data-reset-save]');
+      if(reset && confirm('Сбросить баланс, инвентарь и статистику?')){ localStorage.removeItem(LS_KEY); sessionStorage.removeItem(CATALOG_CACHE); state = loadState(); save(); location.reload(); }
+    });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(closeModal); });
+  }
+  function openModal(id){ const m = typeof id === 'string' ? $(id) : id; if(m) m.classList.add('show'); }
+  function closeModal(m){ if(m) m.classList.remove('show'); }
 
-  function imgTag(obj, cls=''){
-    const item = obj.itemId ? (itemById(obj.itemId) || obj) : obj;
-    return `<img class="${cls}" src="${safe(item.image)}" alt="${safe(item.name)}" loading="lazy" />`;
+  async function route(){
+    const page = document.body.dataset.page || $('main')?.dataset.page || 'home';
+    if(page === 'home') renderHome();
+    if(page === 'cases') renderCases();
+    if(page === 'inventory') renderInventory();
+    if(page === 'upgrade') renderUpgrade();
+    if(page === 'contracts') renderContracts();
+    if(page === 'wheel') renderWheel();
+    if(page === 'ads') renderAds();
+    if(page === 'battle') renderBattle();
+    if(page === 'profile') renderProfile();
   }
-  function itemCard(inst, actions=true){
-    const item = inst.itemId ? (itemById(inst.itemId) || inst) : inst;
-    const r = rarityOf(item);
-    const uidAttr = inst.uid ? `data-uid="${safe(inst.uid)}"` : '';
-    return `<article class="item-card rarity-${item.rarity}" ${uidAttr}>
-      <div class="item-render">${imgTag(item)}</div>
-      <div class="item-info"><b>${safe(item.name)}</b><small><span style="color:${r.color}">${safe(r.label)}</span> • ◆ ${fmt(inst.value || item.value)}</small></div>
-      ${actions && inst.uid ? `<div class="item-actions"><button class="ghost tiny" data-action="sell" data-uid="${safe(inst.uid)}">Продать</button><button class="ghost tiny" data-action="upgrade" data-uid="${safe(inst.uid)}">Апгрейд</button><button class="ghost tiny" data-action="contract" data-uid="${safe(inst.uid)}">Контракт</button></div>` : ''}
+  function renderRouteOnly(){ route(); renderGlobals(); }
+
+  function seedLive(){
+    if(liveTemp.length) return;
+    const items = (catalog?.items?.length?catalog.items:fallbackCatalog.items);
+    for(let i=0;i<12;i++) liveTemp.push({user:sample(names), item:sample(items), value:Math.round(rand(80,5000)), time:Date.now()-i*7000});
+  }
+  function addLive(user,item,value){
+    liveTemp.unshift({user,item,value:value||item.value||0,time:Date.now()}); liveTemp = liveTemp.slice(0,20); renderLive();
+  }
+  function fakeLiveTick(){
+    const items = (catalog?.items?.length?catalog.items:fallbackCatalog.items);
+    const item = sample(items); addLive(sample(names), item, Math.round((item.value||100)*rand(.7,1.4)));
+  }
+  function renderLive(){
+    const feed = $('#liveFeed'); if(!feed) return;
+    feed.innerHTML = liveTemp.slice(0,12).map(x => liveCard(x)).join('');
+  }
+  function liveCard(x){
+    const it = x.item || fallbackCatalog.items[0];
+    return `<div class="live-card rar-border" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(it.image||fallbackWeaponImg)}" onerror="this.src='${fallbackWeaponImg}'" alt=""><div><strong>${esc(x.user)} выбил</strong><small>${esc(it.name)} · ${money(x.value)}</small></div></div>`;
+  }
+
+  function itemHtml(it, opts={}){
+    const name = it.displayName || it.name;
+    return `<article class="item-card ${opts.selected?'selected':''}" style="--rar:${it.rarityColor||'#60a5fa'}" data-uid="${esc(it.uid||'')}">
+      <div class="item-art"><img src="${esc(it.image||fallbackWeaponImg)}" onerror="this.src='${fallbackWeaponImg}'" alt="${esc(name)}"></div>
+      <h4>${esc(name)}</h4>
+      <small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small>
+      <div class="value-row"><span class="price">${money(it.value)}</span>${opts.badge?`<span class="tag">${esc(opts.badge)}</span>`:''}</div>
+      ${opts.buttons ? `<div class="item-buttons">${opts.buttons}</div>` : ''}
     </article>`;
   }
+  function statCards(){
+    return `<div class="grid cards-4">
+      <div class="stat-card"><small>Баланс</small><strong class="js-balance">${money(state.balance)}</strong></div>
+      <div class="stat-card"><small>Предметов</small><strong>${state.inventory.length}</strong></div>
+      <div class="stat-card"><small>Открыто кейсов</small><strong>${state.opened}</strong></div>
+      <div class="stat-card"><small>Заработано</small><strong>${money(state.earned)}</strong></div>
+    </div>`;
+  }
+
+  function renderHome(){
+    const root = $('#homeRoot'); if(!root) return;
+    const topItems = [...catalog.items].sort((a,b)=>b.value-a.value).slice(0,8);
+    root.innerHTML = `
+      ${statCards()}
+      <section class="section"><div class="section-head"><div><h2>Популярные кейсы</h2><p>Каталог подтягивает реальные названия, кейсы и изображения CS2 из открытого JSON-источника, если есть интернет.</p></div><a class="btn primary" href="cases.html">Открыть кейсы</a></div>
+        <div class="grid case-grid">${catalog.cases.slice(0,6).map(caseCard).join('')}</div></section>
+      <section class="section"><div class="section-head"><div><h2>Топ дропов</h2><p>Редкие предметы из текущего пула.</p></div><a class="btn" href="inventory.html">Инвентарь</a></div>
+        <div class="grid item-grid">${topItems.map(it => itemHtml(it,{badge:'пул'})).join('')}</div></section>`;
+    bindCaseButtons(root);
+  }
+
   function caseCard(c){
-    const top = c.pool.map(itemById).filter(Boolean).sort((a,b)=>b.value-a.value)[0];
-    return `<article class="case-card" style="--caseColor:${safe(c.gradient[0])}">
-      <img src="${safe(c.image)}" alt="${safe(c.name)}" loading="lazy" />
-      <div class="case-title"><h3>${safe(c.name)}</h3><b>◆ ${fmt(c.price)}</b></div>
-      <p>${safe(c.desc)}</p>
-      <div class="case-meta"><span>${safe(c.tag)}</span><span>Top: ${safe(top?.name || '—')}</span></div>
-      <a class="primary small" href="cases.html?case=${encodeURIComponent(c.id)}">Открыть</a>
+    const colors = c.items.map(i=>i.rarityColor).filter(Boolean).slice(-1)[0] || '#ffd166';
+    return `<article class="case-card" style="--case-glow:${colors}44">
+      <img class="case-img" src="${esc(c.image||fallbackCaseImg)}" onerror="this.src='${fallbackCaseImg}'" alt="${esc(c.name)}">
+      <h3>${esc(c.name)}</h3>
+      <div class="case-meta"><span class="tag">${c.items.length} предметов</span><span class="price">${money(c.price)}</span></div>
+      <div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,4).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div>
+      <div class="case-source">${esc(c.source||catalog.source||'catalog')}</div>
+      <div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div>
     </article>`;
   }
-
-  function sellItem(uidToSell, silent=false){
-    const idx = state.inventory.findIndex(x => x.uid === uidToSell);
-    if(idx < 0) return false;
-    const [inst] = state.inventory.splice(idx,1);
-    state.contractBasket = state.contractBasket.filter(id => id !== uidToSell);
-    state.balance += inst.value;
-    state.stats.earned += inst.value;
-    save();
-    if(!silent) toast(`Продано: <b>${safe(inst.name)}</b> за ◆ ${fmt(inst.value)}`);
-    renderInventoryPage(); renderDashboard(); renderProfile();
-    return true;
+  function renderCases(){
+    const root = $('#casesRoot'); if(!root) return;
+    root.innerHTML = `<div class="notice"><b>Важно:</b> если у тебя открывается “Directory listing for /” со списком System32, ты запустил сервер не из папки проекта. Распакуй ZIP и запусти <span class="code">start-local.bat</span> внутри папки проекта.</div><div class="grid case-grid" style="margin-top:16px">${catalog.cases.map(caseCard).join('')}</div>`;
+    bindCaseButtons(root);
   }
-  function useForUpgrade(uidToUse){ state.selectedUpgrade = uidToUse; save(); location.href = 'upgrade.html'; }
-  function addToContract(uidToUse){
-    if(!state.contractBasket.includes(uidToUse)) state.contractBasket.push(uidToUse);
-    state.contractBasket = state.contractBasket.filter(id => state.inventory.some(x => x.uid === id)).slice(0,10);
-    save(); location.href = 'contracts.html';
+  function bindCaseButtons(root=document){
+    $$('[data-open-case]', root).forEach(btn => btn.addEventListener('click', () => showCaseModal(btn.dataset.openCase, true)));
+    $$('[data-view-case]', root).forEach(btn => btn.addEventListener('click', () => showCaseModal(btn.dataset.viewCase, false)));
   }
-  function dropModal(inst, caseId){
-    const c = caseById(caseId);
-    const r = rarityOf(inst);
-    openModal(`<button class="modal-close" data-close>×</button>
-      <span class="eyebrow">new drop</span><h2>${safe(inst.name)}</h2>
-      <div class="drop-big rarity-${inst.rarity}">${imgTag(inst)}</div>
-      <div class="drop-stats"><span style="color:${r.color}">${safe(r.label)}</span><b>◆ ${fmt(inst.value)}</b><em>${safe(c.name)}</em></div>
-      <div class="modal-actions">
-        <button class="primary" data-drop-sell="${safe(inst.uid)}">Продать за ◆ ${fmt(inst.value)}</button>
-        <button class="ghost" data-drop-upgrade="${safe(inst.uid)}">Апгрейд</button>
-        <button class="ghost" data-drop-contract="${safe(inst.uid)}">В контракт</button>
-        <button class="ghost" data-close>Оставить</button>
-        <button class="primary alt" data-open-again="${safe(caseId)}">Открыть ещё</button>
-      </div>`, 'drop-modal');
+  function showCaseModal(caseId, autoOpen=false){
+    const c = catalog.cases.find(x=>x.id===caseId); if(!c) return toast('Кейс не найден', 'bad');
+    selectedCaseId = c.id;
+    const modal = $('#caseModal');
+    const body = $('#caseModalBody');
+    $('#caseModalTitle').textContent = c.name;
+    body.innerHTML = `<div class="two-col"><div class="panel"><img class="case-img" src="${esc(c.image||fallbackCaseImg)}" onerror="this.src='${fallbackCaseImg}'" alt="${esc(c.name)}" style="height:220px;width:100%;object-fit:contain;filter:drop-shadow(0 26px 30px rgba(0,0,0,.45))"><p class="notice">Цена открытия: <b>${money(c.price)}</b><br>${esc(c.rareText||'Внутри может быть редкий предмет.')}</p><button id="startSpinBtn" class="btn primary" style="width:100%">Открыть за ${money(c.price)}</button><p class="spin-note">Баланс списывается сразу, предмет начисляется после остановки рулетки.</p></div><div><div class="roulette-box"><div class="roulette-pointer"></div><div id="rouletteStrip" class="roulette-strip">${Array.from({length:18},()=>rollCard(weightedItem(c))).join('')}</div></div><h4>Содержимое кейса</h4><div class="case-contents">${c.items.map(it => itemHtml(it,{badge:'шанс'})).join('')}</div></div></div>`;
+    $('#startSpinBtn').addEventListener('click', () => openCase(c.id));
+    openModal(modal);
+    if(autoOpen) setTimeout(()=>openCase(c.id), 250);
   }
-
-  let rolling = false;
-  function renderRollCard(item){
-    const r = rarityOf(item);
-    return `<div class="roll-card rarity-${item.rarity}">${imgTag(item)}<b>${safe(item.name)}</b><span style="color:${r.color}">${safe(r.label)}</span></div>`;
+  function rollCard(it){
+    return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(it.image||fallbackWeaponImg)}" onerror="this.src='${fallbackWeaponImg}'" alt=""><b>${esc(it.name)}</b></div>`;
   }
-  function prepareStrip(c){
-    const strip = $('#rouletteStrip');
-    if(!strip) return;
-    strip.style.transition = 'none';
-    strip.style.transform = 'translateX(0px)';
-    const arr = Array.from({length: 32}, () => pickWeighted(c.pool));
-    strip.innerHTML = arr.map(renderRollCard).join('');
-  }
-  function renderCaseDetails(caseId){
-    const c = caseById(caseId);
-    if(!c) return;
-    $('#selectedCaseTitle') && ($('#selectedCaseTitle').textContent = c.name);
-    $('#selectedCaseDesc') && ($('#selectedCaseDesc').textContent = c.desc);
-    $('#selectedCasePrice') && ($('#selectedCasePrice').textContent = `◆ ${fmt(c.price)}`);
-    const img = $('#selectedCaseImage');
-    if(img){ img.src = c.image; img.alt = c.name; }
-    const btn = $('#openCaseBtn');
-    if(btn){ btn.dataset.case = c.id; btn.textContent = `Открыть за ◆ ${fmt(c.price)}`; }
-    const odds = $('#caseOdds');
-    if(odds){
-      const grouped = {};
-      c.pool.map(itemById).filter(Boolean).forEach(it => grouped[it.rarity] = (grouped[it.rarity] || 0) + (rarityOf(it).weight || 1));
-      const total = Object.values(grouped).reduce((a,b)=>a+b,0);
-      odds.innerHTML = Object.entries(grouped).sort((a,b)=>rarityOf({rarity:a[0]}).order-rarityOf({rarity:b[0]}).order).map(([rar,w]) => `<div><span style="color:${rarities[rar].color}">${safe(rarities[rar].label)}</span><b>${(w/total*100).toFixed(1)}%</b></div>`).join('');
-    }
-    const pool = $('#casePool');
-    if(pool) pool.innerHTML = c.pool.map(itemById).filter(Boolean).sort((a,b)=>a.value-b.value).map(it => itemCard(createInstance(it,'preview'), false)).join('');
-    $$('[data-case-tab]').forEach(x=>x.classList.toggle('active', x.dataset.caseTab === c.id));
-    prepareStrip(c);
+  function weightedItem(c){
+    const pool = c.items.length?c.items:fallbackCatalog.items;
+    const total = pool.reduce((s,it)=>s+(it.weight||rarityWeight[it.rarity]||5),0);
+    let r = Math.random() * total;
+    for(const it of pool){ r -= (it.weight||rarityWeight[it.rarity]||5); if(r <= 0) return it; }
+    return pool[pool.length-1];
   }
   function openCase(caseId){
-    if(rolling) return;
-    const c = caseById(caseId);
-    if(!c) return;
+    if(spinning) return;
+    const c = catalog.cases.find(x=>x.id===caseId); if(!c) return;
+    if(!spend(c.price, `Открытие ${c.name}`)) return;
+    spinning = true; state.opened += 1; save();
+    const btn = $('#startSpinBtn'); if(btn){ btn.disabled = true; btn.textContent = 'Крутится...'; }
+    const win = weightedItem(c);
     const strip = $('#rouletteStrip');
-    const win = $('#rouletteWindow');
-    if(!strip || !win){ location.href = `cases.html?case=${encodeURIComponent(c.id)}`; return; }
-    if(!spendCoins(c.price)){
-      toast(`Не хватает монет: нужно ◆ ${fmt(c.price)}, на балансе ◆ ${fmt(state.balance)}. Получи монеты через рекламу или бонусы.`);
-      return;
-    }
-    state.opened += 1; save(); updateDashboardNumbers();
-    rolling = true;
-    const btn = $('#openCaseBtn');
-    if(btn){ btn.disabled = true; btn.textContent = 'Открывается...'; }
-    const won = pickWeighted(c.pool);
-    const inst = createInstance(won, c.name);
-    const winIndex = 44;
-    const arr = Array.from({length: 62}, () => pickWeighted(c.pool));
-    arr[winIndex] = won;
-    strip.style.transition = 'none';
-    strip.style.transform = 'translateX(0px)';
-    strip.innerHTML = arr.map(renderRollCard).join('');
-    // force layout and calculate actual card size, so animation works on desktop and phone
+    const box = strip?.closest('.roulette-box');
+    if(!strip || !box){ spinning = false; return; }
+    const winIndex = 36;
+    const roll = Array.from({length:52}, (_,i) => i===winIndex ? win : weightedItem(c));
+    strip.style.transition = 'none'; strip.style.transform = 'translateX(0px)'; strip.innerHTML = roll.map(rollCard).join('');
+    // force layout before transition
     strip.getBoundingClientRect();
-    const first = $('.roll-card', strip);
-    const gap = parseFloat(getComputedStyle(strip).gap || '12') || 12;
-    const step = (first ? first.getBoundingClientRect().width : 178) + gap;
-    const target = -(winIndex * step) + (win.clientWidth / 2) - (step / 2) + (Math.random()*24 - 12);
     requestAnimationFrame(() => {
-      strip.style.transition = 'transform 4.2s cubic-bezier(.06,.74,.1,1)';
-      strip.style.transform = `translateX(${target}px)`;
+      const card = strip.children[winIndex];
+      const target = card.offsetLeft - (box.clientWidth/2) + (card.clientWidth/2) + rand(-22,22);
+      strip.style.transition = 'transform 5.2s cubic-bezier(.08,.7,.06,1)';
+      strip.style.transform = `translateX(-${target}px)`;
     });
     setTimeout(() => {
-      addInventory(inst, {caseName:c.name});
-      rolling = false;
-      if(btn){ btn.disabled = false; btn.textContent = `Открыть за ◆ ${fmt(c.price)}`; }
-      renderDashboard(); renderProfile();
-      dropModal(inst, c.id);
+      const inv = addInventoryItem(win, c.name);
+      currentDrop = {item:inv, caseId:c.id};
+      addLive('Ты', inv, inv.value);
+      showDrop(inv, c);
+      spinning = false;
+      if(btn){ btn.disabled = false; btn.textContent = `Открыть ещё за ${money(c.price)}`; }
+    }, 5400);
+  }
+  function showDrop(it,c){
+    const modal = $('#dropModal'); const body = $('#dropModalBody');
+    body.innerHTML = `<div class="drop-modal"><p class="kicker">Выпал предмет</p><img class="drop-img" src="${esc(it.image||fallbackWeaponImg)}" onerror="this.src='${fallbackWeaponImg}'" alt=""><h2 class="drop-name" style="color:${it.rarityColor||'#fff'}">${esc(it.displayName||it.name)}</h2><p>${esc(it.rarity)} · ${esc(it.wear)} · float ${esc(it.float)}</p><h3 class="price">${money(it.value)}</h3><div class="drop-actions"><button class="btn green" data-sell="${it.uid}">Продать за ${money(it.value)}</button><button class="btn" data-close-modal>Оставить</button><button class="btn blue" data-upgrade-item="${it.uid}">В апгрейд</button><button class="btn" data-contract-item="${it.uid}">В контракт</button><button class="btn primary" id="openAgainBtn">Открыть ещё</button></div></div>`;
+    $('#openAgainBtn')?.addEventListener('click', () => { closeModal(modal); if(c) openCase(c.id); });
+    openModal(modal);
+  }
+
+  function renderInventory(){
+    const root = $('#inventoryRoot'); if(!root) return;
+    const query = $('#invSearch')?.value?.toLowerCase() || '';
+    const rarity = $('#invRarity')?.value || 'all';
+    const sort = $('#invSort')?.value || 'new';
+    let arr = [...state.inventory];
+    if(query) arr = arr.filter(it => (it.displayName||it.name).toLowerCase().includes(query));
+    if(rarity !== 'all') arr = arr.filter(it => it.rarity === rarity);
+    if(sort === 'valueDesc') arr.sort((a,b)=>b.value-a.value);
+    if(sort === 'valueAsc') arr.sort((a,b)=>a.value-b.value);
+    if(sort === 'rarity') arr.sort((a,b)=>(rarityBase[b.rarity]||0)-(rarityBase[a.rarity]||0));
+    if(sort === 'new') arr.sort((a,b)=>b.addedAt-a.addedAt);
+    const rarities = [...new Set(state.inventory.map(i=>i.rarity))];
+    const controls = $('#inventoryControls');
+    if(controls && !controls.dataset.bound){
+      controls.innerHTML = `<input id="invSearch" placeholder="Поиск по названию скина"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select><select id="invSort"><option value="new">Сначала новые</option><option value="valueDesc">Сначала дорогие</option><option value="valueAsc">Сначала дешёвые</option><option value="rarity">По редкости</option></select><button class="small-btn" id="sellCheapBtn">Продать дешевле 200 LC</button>`;
+      controls.dataset.bound='1';
+      controls.addEventListener('input', renderInventory); controls.addEventListener('change', renderInventory);
+      $('#sellCheapBtn')?.addEventListener('click', () => sellCheap());
+      return renderInventory();
+    }
+    root.innerHTML = arr.length ? `<div class="grid item-grid">${arr.map(it => itemHtml(it,{buttons:`<button data-sell="${it.uid}">Продать</button><button data-upgrade-item="${it.uid}">Апгрейд</button><button data-contract-item="${it.uid}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй баттл или прокрути колесо.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
+  }
+  function sellCheap(){
+    const cheap = state.inventory.filter(it => it.value < 200);
+    if(!cheap.length) return toast('Нет предметов дешевле 200 LC', 'bad');
+    const total = cheap.reduce((s,it)=>s+it.value,0);
+    removeInventory(cheap.map(it=>it.uid)); state.sold += total; earn(total, `Массовая продажа ${cheap.length} предметов`); renderInventory();
+  }
+
+  function renderUpgrade(){
+    const root = $('#upgradeRoot'); if(!root) return;
+    const selectedUid = state.pendingUpgrade;
+    const selected = state.inventory.find(i=>i.uid===selectedUid) || state.inventory[0] || null;
+    if(selected && state.pendingUpgrade !== selected.uid){ state.pendingUpgrade = selected.uid; save(); }
+    const targets = [...catalog.items].filter(it => !selected || it.value > selected.value * 1.05).sort((a,b)=>a.value-b.value).slice(0,40);
+    root.innerHTML = `<div class="upgrade-layout"><div class="panel"><h3>Твой предмет</h3><div class="selected-box">${selected?itemHtml(selected):'<div><h3>Нет предмета</h3><p>Сначала выбей предмет.</p></div>'}</div><div id="upgradeInfo"></div><button class="btn primary" id="upgradeBtn" ${selected?'':'disabled'}>Апгрейд</button><p class="spin-note">При проигрыше исходный предмет исчезает. Это только локальный симулятор.</p></div><div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"><select id="sourceSelect">${state.inventory.map(it=>`<option value="${it.uid}" ${it.uid===selected?.uid?'selected':''}>${esc(it.displayName||it.name)} · ${money(it.value)}</option>`).join('')}</select></div><div class="target-row" id="targetRow">${targets.map((it,i)=>itemHtml(it,{selected:i===0,badge:'цель'})).join('')}</div></div></div>`;
+    let target = targets[0];
+    const updateInfo = () => {
+      const chance = selected && target ? calcChance(selected.value, target.value) : 0;
+      $('#upgradeInfo').innerHTML = target && selected ? `<p>Цель: <b>${esc(target.name)}</b> · ${money(target.value)}</p><div class="chance-meter"><span style="width:${chance}%"></span></div><p class="price">Шанс: ${chance.toFixed(2)}%</p>` : '';
+    };
+    updateInfo();
+    $('#sourceSelect')?.addEventListener('change', e => { state.pendingUpgrade = e.target.value; save(); renderUpgrade(); });
+    $('#targetSearch')?.addEventListener('input', e => {
+      const q = e.target.value.toLowerCase();
+      const next = targets.filter(it=>it.name.toLowerCase().includes(q));
+      $('#targetRow').innerHTML = next.map((it,i)=>itemHtml(it,{selected:i===0,badge:'цель'})).join('');
+      target = next[0]; bindTargets(); updateInfo();
+    });
+    function bindTargets(){
+      $$('#targetRow .item-card').forEach((card,i) => card.addEventListener('click', () => {
+        $$('#targetRow .item-card').forEach(c=>c.classList.remove('selected')); card.classList.add('selected');
+        const q = $('#targetSearch')?.value?.toLowerCase() || '';
+        const list = targets.filter(it=>it.name.toLowerCase().includes(q)); target = list[i]; updateInfo();
+      }));
+    }
+    bindTargets();
+    $('#upgradeBtn')?.addEventListener('click', () => doUpgrade(selected, target));
+  }
+  function calcChance(sourceValue, targetValue){ return clamp((sourceValue / targetValue) * 86, 1, 76); }
+  function doUpgrade(source,target){
+    if(!source || !target) return;
+    const chance = calcChance(source.value, target.value);
+    removeInventory(source.uid); state.upgrades += 1;
+    if(Math.random()*100 <= chance){ const win = addInventoryItem(target,'upgrade'); state.pendingUpgrade = win.uid; save(); addLive('Ты',win,win.value); toast(`Апгрейд успешен: ${win.displayName}`, 'good'); }
+    else{ state.pendingUpgrade = null; save(); toast('Апгрейд не прошёл, предмет сгорел', 'bad'); }
+    renderUpgrade();
+  }
+
+  function toggleContractSelection(uid){
+    const set = new Set(state.contractSelected||[]);
+    if(set.has(uid)) set.delete(uid); else if(set.size < 10) set.add(uid); else return toast('Максимум 10 предметов', 'bad');
+    state.contractSelected = Array.from(set); save();
+  }
+  function renderContracts(){
+    const root = $('#contractsRoot'); if(!root) return;
+    const selectedSet = new Set(state.contractSelected||[]);
+    const selected = state.inventory.filter(it=>selectedSet.has(it.uid));
+    const total = selected.reduce((s,it)=>s+it.value,0);
+    const potential = Math.round(total * rand(1.08,1.95));
+    root.innerHTML = `<div class="contract-layout"><div class="panel"><h3>Контракт</h3><div class="selected-box"><div><strong style="font-size:42px">${selected.length}/10</strong><p>Нужно минимум 3 предмета.</p><p>Сумма: <span class="price">${money(total)}</span></p><p>Ожидаемый результат: <span class="price">${money(potential)}</span></p></div></div><button class="btn primary" id="contractBtn" ${selected.length>=3?'':'disabled'}>Создать контракт</button><button class="btn" id="clearContractBtn" style="margin-top:10px;width:100%">Очистить выбор</button></div><div><div class="grid item-grid">${state.inventory.map(it => itemHtml(it,{selected:selectedSet.has(it.uid),buttons:`<button data-contract-item="${it.uid}">${selectedSet.has(it.uid)?'Убрать':'Добавить'}</button>`})).join('') || '<div class="empty">Нет предметов для контракта.</div>'}</div></div></div>`;
+    $('#clearContractBtn')?.addEventListener('click', () => { state.contractSelected=[]; save(); renderContracts(); });
+    $('#contractBtn')?.addEventListener('click', () => doContract(selected));
+  }
+  function doContract(selected){
+    if(selected.length < 3) return;
+    const total = selected.reduce((s,it)=>s+it.value,0);
+    const candidates = [...catalog.items].filter(it => it.value >= total*.55 && it.value <= total*2.4);
+    const base = candidates.length ? sample(candidates) : sample(catalog.items);
+    removeInventory(selected.map(it=>it.uid));
+    const reward = addInventoryItem({...base, value:Math.round(total*rand(.9,1.85))}, 'contract');
+    state.contractSelected=[]; state.contracts += 1; save(); addLive('Ты',reward,reward.value);
+    toast(`Контракт дал ${reward.displayName}`, 'good'); showDrop(reward, null); renderContracts();
+  }
+
+  function renderWheel(){
+    const root = $('#wheelRoot'); if(!root) return;
+    root.innerHTML = `<div class="wheel-wrap"><div class="wheel-pointer"></div><div class="wheel" id="wheel"></div><button class="btn primary" id="spinWheelBtn">Крутить бонусное колесо</button><p class="notice">Колесо выдаёт LabCoins или случайный предмет. Баланс начисляется сразу после остановки.</p><div id="wheelResult"></div></div>`;
+    $('#spinWheelBtn')?.addEventListener('click', spinWheel);
+  }
+  function spinWheel(){
+    const btn = $('#spinWheelBtn'); if(btn.disabled) return;
+    btn.disabled = true;
+    const rewards = [
+      {label:'+250 LC', type:'coins', amount:250},{label:'+500 LC', type:'coins', amount:500},{label:'+1000 LC', type:'coins', amount:1000},{label:'+2500 LC', type:'coins', amount:2500},
+      {label:'Случайный скин', type:'item'},{label:'Промо-бонус', type:'coins', amount:750},{label:'Почти нож', type:'coins', amount:120},{label:'Редкий скин', type:'rare'}
+    ];
+    const idx = Math.floor(Math.random()*rewards.length);
+    wheelDeg += 360*5 + (360 - idx*45) + rand(5,35);
+    $('#wheel').style.transform = `rotate(${wheelDeg}deg)`;
+    setTimeout(() => {
+      const r = rewards[idx];
+      if(r.type==='coins'){ earn(r.amount, 'Бонусное колесо'); $('#wheelResult').innerHTML = `<h3 class="price">${esc(r.label)}</h3>`; }
+      else{
+        let pool = catalog.items;
+        if(r.type==='rare') pool = catalog.items.filter(i => ['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(i.rarity));
+        const it = addInventoryItem(sample(pool.length?pool:catalog.items),'wheel'); addLive('Ты',it,it.value); $('#wheelResult').innerHTML = itemHtml(it,{badge:'колесо'});
+      }
+      btn.disabled = false;
     }, 4400);
   }
 
-  function renderCasesPage(){
-    const grid = $('#caseGrid');
-    if(grid) grid.innerHTML = cases.map(caseCard).join('');
-    const side = $('#caseSelectGrid');
-    if(side){
-      side.innerHTML = cases.map(c => `<button class="case-tab" data-case-tab="${safe(c.id)}"><img src="${safe(c.image)}" alt=""><b>${safe(c.name)}</b><em>◆ ${fmt(c.price)}</em></button>`).join('');
-    }
-    const params = new URLSearchParams(location.search);
-    renderCaseDetails(params.get('case') || cases[0]?.id);
+  function renderAds(){
+    const root = $('#adsRoot'); if(!root) return;
+    root.innerHTML = `<div class="ad-card"><div class="ad-hero"><div><p class="kicker">Реклама своих проектов</p><h2>Смотри 10 секунд — получай 750 LabCoins</h2><p>Это локальная имитация рекламы под портфолио, GitHub, видео, подкасты и учебные проекты.</p><button class="btn primary" id="startAdBtn">Смотреть рекламу</button><div style="margin-top:18px"><div class="progress"><span id="adProgress"></span></div><p id="adTimer" class="price">10 сек.</p></div></div></div><div class="ad-projects">${projectCards()}</div></div>`;
+    $('#startAdBtn')?.addEventListener('click', startAd);
+  }
+  function projectCards(){
+    const projects = [
+      ['Портфолио','Ссылка на твой сайт/визитку. Замени URL в app.js.','#'],['YouTube-проект','Ролики, презентации, конференции и обзоры.','#'],['Подкаст','Финансы, учебные проекты и интервью.','#'],['GitHub','Репозитории, HTML-проекты и демо.','#']
+    ];
+    return projects.map(p=>`<a class="project-card" href="${p[2]}" target="_blank"><h3>${esc(p[0])}</h3><p>${esc(p[1])}</p></a>`).join('');
+  }
+  function startAd(){
+    const btn = $('#startAdBtn'); const prog = $('#adProgress'); const timer = $('#adTimer');
+    btn.disabled = true; let sec = 10; prog.style.width='0%'; timer.textContent='10 сек.';
+    const int = setInterval(() => {
+      sec--; prog.style.width = `${(10-sec)*10}%`; timer.textContent = sec>0 ? `${sec} сек.` : 'Готово';
+      if(sec <= 0){ clearInterval(int); earn(750, 'Просмотр рекламы'); btn.disabled=false; }
+    },1000);
   }
 
-  function fillRarityFilter(){
-    const sel = $('#rarityFilter');
-    if(!sel || sel.dataset.ready) return;
-    Object.entries(rarities).sort((a,b)=>a[1].order-b[1].order).forEach(([id,r]) => {
-      const opt = document.createElement('option'); opt.value = id; opt.textContent = r.label; sel.appendChild(opt);
-    });
-    sel.dataset.ready = '1';
-  }
-  function renderInventoryPage(){
-    const grid = $('#inventoryGrid');
-    if(!grid) return;
-    fillRarityFilter();
-    const search = ($('#inventorySearch')?.value || '').toLowerCase().trim();
-    const rarity = $('#rarityFilter')?.value || 'all';
-    const sort = $('#sortInventory')?.value || 'new';
-    let arr = [...state.inventory];
-    if(search) arr = arr.filter(x => x.name.toLowerCase().includes(search));
-    if(rarity !== 'all') arr = arr.filter(x => x.rarity === rarity);
-    arr.sort((a,b) => sort === 'valueDesc' ? b.value-a.value : sort === 'valueAsc' ? a.value-b.value : sort === 'rarity' ? rarityOf(b).order-rarityOf(a).order : new Date(b.obtained)-new Date(a.obtained));
-    grid.innerHTML = arr.length ? arr.map(x => itemCard(x,true)).join('') : `<div class="empty-card"><h3>Инвентарь пуст</h3><p>Открой кейсы, выиграй баттл или получи монеты за рекламу.</p><a class="primary" href="cases.html">К кейсам</a></div>`;
-    const value = state.inventory.reduce((s,x)=>s+x.value,0);
-    $('#inventoryValue') && ($('#inventoryValue').textContent = fmt(value));
-    $('#inventoryCount') && ($('#inventoryCount').textContent = fmt(state.inventory.length));
-    $('#inventoryBest') && ($('#inventoryBest').textContent = state.bestId ? (itemById(state.bestId)?.name || '—') : '—');
-  }
-
-  function renderDashboard(){
-    $('#homeCases') && ($('#homeCases').innerHTML = cases.slice(0,6).map(caseCard).join(''));
-    updateDashboardNumbers();
-    const recent = $('#recentDrops');
-    if(recent){
-      recent.innerHTML = state.history.slice(0,8).map(h => {
-        const it = itemById(h.itemId) || normalizeInstance(h);
-        return `<div class="history-row">${imgTag(it)}<span><b>${safe(h.name)}</b><small>${safe(h.caseName || h.source || 'drop')} • ◆ ${fmt(h.value)}</small></span><em style="color:${rarityOf(it).color}">${safe(rarityOf(it).label)}</em></div>`;
-      }).join('') || '<div class="empty-card"><p>Пока нет открытий. Начни с любого кейса.</p></div>';
-    }
-    const best = $('#bestDropCard');
-    if(best){
-      const inst = state.inventory.find(x => x.itemId === state.bestId) || (state.bestId ? createInstance(itemById(state.bestId),'best') : null);
-      best.innerHTML = inst ? itemCard(inst, false) : '<div class="empty-card"><h3>Пока нет лучшего дропа</h3><p>Открой первый кейс.</p></div>';
-    }
-  }
-  function updateDashboardNumbers(){
-    $('#statOpened') && ($('#statOpened').textContent = fmt(state.opened));
-    $('#statInventory') && ($('#statInventory').textContent = fmt(state.inventory.length));
-    $('#statValue') && ($('#statValue').textContent = fmt(state.inventory.reduce((s,x)=>s+x.value,0)));
-  }
-
-  function renderUpgradePage(){
-    const own = $('#upgradeOwn'); const target = $('#upgradeTarget');
-    if(!own || !target) return;
-    const validSelected = state.selectedUpgrade && state.inventory.some(x => x.uid === state.selectedUpgrade) ? state.selectedUpgrade : (state.inventory[0]?.uid || '');
-    own.innerHTML = state.inventory.length ? state.inventory.map(inst => `<option value="${safe(inst.uid)}" ${inst.uid===validSelected?'selected':''}>${safe(inst.name)} — ◆ ${fmt(inst.value)}</option>`).join('') : '<option value="">Нет предметов</option>';
-    const source = state.inventory.find(x => x.uid === own.value);
-    target.innerHTML = items.filter(it => !source || it.value >= Math.max(80, source.value * .55)).sort((a,b)=>a.value-b.value).map(it => `<option value="${safe(it.id)}">${safe(it.name)} — ◆ ${fmt(it.value)}</option>`).join('');
-    updateUpgradeChance();
-  }
-  function calcUpgradeChance(source, target){
-    if(!source || !target) return 0;
-    let chance = (source.value / target.value) * 68;
-    if(target.value <= source.value) chance = 82;
-    return clamp(chance, 1.1, 84);
-  }
-  function updateUpgradeChance(){
-    const source = state.inventory.find(x => x.uid === $('#upgradeOwn')?.value);
-    const target = itemById($('#upgradeTarget')?.value);
-    const chance = calcUpgradeChance(source, target);
-    $('#upgradeChance') && ($('#upgradeChance').textContent = chance.toFixed(1) + '%');
-    $('#upgradeMeter') && ($('#upgradeMeter').style.width = chance + '%');
-    const preview = $('#upgradePreview');
-    if(preview){
-      preview.innerHTML = `<div>${source ? itemCard(source,false) : '<div class="empty-card">Нет предмета</div>'}</div><div class="upgrade-arrow">→</div><div>${target ? itemCard(createInstance(target,'target'), false) : '<div class="empty-card">Нет цели</div>'}</div>`;
-    }
-  }
-  function doUpgrade(){
-    const own = $('#upgradeOwn'); const targetSel = $('#upgradeTarget');
-    const source = state.inventory.find(x => x.uid === own?.value);
-    const target = itemById(targetSel?.value);
-    if(!source || !target) return toast('Сначала выбери предмет и цель.');
-    const chance = calcUpgradeChance(source, target);
-    const idx = state.inventory.findIndex(x => x.uid === source.uid);
-    if(idx < 0) return;
-    state.inventory.splice(idx,1);
-    state.contractBasket = state.contractBasket.filter(id => id !== source.uid);
-    state.stats.upgrades++;
-    const win = Math.random()*100 <= chance;
-    if(win){
-      const inst = createInstance(target,'Upgrade');
-      state.inventory.unshift(inst); setBest(inst); addHistory(inst,{caseName:'Upgrade'}); state.stats.upgradeWins++;
-      save(); renderUpgradePage(); renderInventoryPage(); renderDashboard();
-      openModal(`<button class="modal-close" data-close>×</button><span class="eyebrow">upgrade win</span><h2>${safe(target.name)}</h2><div class="drop-big rarity-${target.rarity}">${imgTag(target)}</div><p>Шанс был ${chance.toFixed(1)}%. Предмет добавлен в инвентарь.</p><div class="modal-actions"><button class="primary" data-close>Забрать</button><a class="ghost" href="inventory.html">Инвентарь</a></div>`);
-    }else{
-      save(); renderUpgradePage(); renderInventoryPage(); renderDashboard();
-      openModal(`<button class="modal-close" data-close>×</button><span class="eyebrow">upgrade failed</span><h2>Предмет сгорел</h2><div class="drop-big failed">${imgTag(source)}</div><p>${safe(source.name)} не превратился в ${safe(target.name)}. Шанс был ${chance.toFixed(1)}%.</p><div class="modal-actions"><button class="primary" data-close>Понятно</button><a class="ghost" href="cases.html">К кейсам</a></div>`);
-    }
-    state.selectedUpgrade = null; save();
-  }
-
-  const wheelRewards = [80,120,180,240,350,500,700,1000,1400,2200];
-  function renderWheel(){
-    const wheel = $('#bonusWheel'); if(!wheel) return;
-    wheel.innerHTML = wheelRewards.map((r,i)=>`<span style="--i:${i};--total:${wheelRewards.length}">◆ ${fmt(r)}</span>`).join('');
-    wheel.style.transform = `rotate(${state.wheelRotation || 0}deg)`;
-    updateWheelCooldown();
-  }
-  function updateWheelCooldown(){
-    const btn = $('#spinWheelBtn'); const hint = $('#wheelHint');
-    if(!btn) return;
-    const cooldown = 10*60*1000;
-    const left = Math.max(0, cooldown - (now() - (state.lastWheel || 0)));
-    btn.disabled = left > 0;
-    if(hint) hint.textContent = left > 0 ? `Следующий спин через ${Math.ceil(left/60000)} мин.` : 'Бесплатный спин готов.';
-  }
-  function spinWheel(){
-    const btn = $('#spinWheelBtn'); if(btn?.disabled) return;
-    const reward = wheelRewards[Math.floor(Math.random()*wheelRewards.length)];
-    state.wheelRotation = (state.wheelRotation || 0) + 1440 + Math.floor(Math.random()*360);
-    state.lastWheel = now(); save(); updateWheelCooldown();
-    $('#bonusWheel') && ($('#bonusWheel').style.transform = `rotate(${state.wheelRotation}deg)`);
-    setTimeout(()=>{
-      addCoins(reward);
-      openModal(`<button class="modal-close" data-close>×</button><span class="eyebrow">bonus wheel</span><h2>Ты получил ◆ ${fmt(reward)}</h2><p>Монеты начислены на баланс.</p><div class="modal-actions"><button class="primary" data-close>Забрать</button><a class="ghost" href="cases.html">К кейсам</a></div>`);
-      updateWheelCooldown();
-    }, 3200);
-  }
-  function updateDaily(){
-    const btn = $('#dailyBtn'); if(!btn) return;
-    const today = new Date().toISOString().slice(0,10);
-    const last = state.lastDaily ? new Date(state.lastDaily).toISOString().slice(0,10) : '';
-    btn.disabled = today === last;
-    btn.textContent = today === last ? 'Бонус уже получен' : 'Забрать ◆ 500';
-  }
-  function claimDaily(){
-    const today = new Date().toISOString().slice(0,10);
-    const last = state.lastDaily ? new Date(state.lastDaily).toISOString().slice(0,10) : '';
-    if(today === last) return toast('Ежедневный бонус уже забран сегодня.');
-    state.lastDaily = now(); addCoins(500, 'Ежедневный бонус'); updateDaily();
-  }
-  function applyPromo(){
-    const input = $('#promoInput'); if(!input) return;
-    const code = input.value.trim().toUpperCase();
-    const promo = {LAB2026:750, EFIM:500, CASELAB:650};
-    if(!promo[code]) return toast('Такого промокода нет. Попробуй LAB2026, EFIM или CASELAB.');
-    if(state.usedPromos.includes(code)) return toast('Этот промокод уже использован.');
-    state.usedPromos.push(code); addCoins(promo[code], 'Промокод'); input.value = '';
-  }
-
-  function renderContractsPage(){
-    const list = $('#contractInventory'); if(!list) return;
-    state.contractBasket = state.contractBasket.filter(id => state.inventory.some(x => x.uid === id)).slice(0,10);
-    save();
-    list.innerHTML = state.inventory.length ? state.inventory.map(inst => `<button class="contract-item ${state.contractBasket.includes(inst.uid)?'selected':''}" data-contract-pick="${safe(inst.uid)}">${imgTag(inst)}<b>${safe(inst.name)}</b><span>◆ ${fmt(inst.value)}</span></button>`).join('') : '<div class="empty-card"><h3>Нет предметов</h3><p>Открой кейсы или выиграй баттл.</p></div>';
-    const picked = state.contractBasket.map(id => state.inventory.find(x => x.uid === id)).filter(Boolean);
-    const value = picked.reduce((s,x)=>s+x.value,0);
-    $('#contractCount') && ($('#contractCount').textContent = `${picked.length}/10`);
-    $('#contractValue') && ($('#contractValue').textContent = fmt(value));
-    const possible = picked.length >= 3 ? chooseByValue(value*.68, value*1.82) : null;
-    $('#contractPreview') && ($('#contractPreview').innerHTML = possible ? itemCard(createInstance(possible,'contract-preview'), false) : '<div class="empty-card"><h3>Добавь 3–10 предметов</h3><p>После этого появится прогноз результата.</p></div>');
-    $('#contractBtn') && ($('#contractBtn').disabled = picked.length < 3);
-  }
-  function runContract(){
-    const picked = state.contractBasket.map(id => state.inventory.find(x => x.uid === id)).filter(Boolean);
-    if(picked.length < 3) return toast('Нужно минимум 3 предмета.');
-    const value = picked.reduce((s,x)=>s+x.value,0);
-    const result = chooseByValue(value*.62, value*1.9);
-    state.inventory = state.inventory.filter(x => !state.contractBasket.includes(x.uid));
-    const inst = createInstance(result,'Contract');
-    state.inventory.unshift(inst); setBest(inst); addHistory(inst,{caseName:'Contract'});
-    state.contractBasket = []; state.stats.contracts++; save(); renderContractsPage(); renderInventoryPage(); renderDashboard(); renderProfile();
-    openModal(`<button class="modal-close" data-close>×</button><span class="eyebrow">contract result</span><h2>${safe(inst.name)}</h2><div class="drop-big rarity-${inst.rarity}">${imgTag(inst)}</div><p>Сумма вложенных предметов: ◆ ${fmt(value)}. Новый предмет добавлен в инвентарь.</p><div class="modal-actions"><button class="primary" data-close>Забрать</button><a class="ghost" href="inventory.html">Инвентарь</a></div>`);
-  }
-
-  function renderBattlePage(){
-    const sel = $('#battleCase'); if(!sel) return;
-    sel.innerHTML = cases.map(c => `<option value="${safe(c.id)}">${safe(c.name)} — ◆ ${fmt(c.price)}</option>`).join('');
-    updateBattleCost();
-  }
-  function updateBattleCost(){
-    const c = caseById($('#battleCase')?.value || cases[0]?.id);
-    const rounds = Number($('#battleRounds')?.value || 1);
-    const players = Number($('#battlePlayers')?.value || 2);
-    $('#battleCost') && ($('#battleCost').textContent = fmt(c.price * rounds));
-    $('#battleModeText') && ($('#battleModeText').textContent = `${players} игрока • ${rounds} раунд.`);
+  function renderBattle(){
+    const root = $('#battleRoot'); if(!root) return;
+    root.innerHTML = `<div class="battle-layout"><div class="panel"><h3>Case Battle</h3><p>Выбери кейс. Стоимость списывается только за твоё место. Победитель забирает все выпавшие предметы.</p><select id="battleCaseSelect" style="width:100%;margin-bottom:12px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:14px;padding:12px">${catalog.cases.map(c=>`<option value="${c.id}">${esc(c.name)} · ${money(c.price)}</option>`).join('')}</select><button class="btn primary" id="startBattleBtn">Начать баттл</button></div><div id="battleArena" class="grid cards-3"></div></div>`;
+    $('#startBattleBtn')?.addEventListener('click', startBattle);
   }
   function startBattle(){
-    const c = caseById($('#battleCase')?.value || cases[0]?.id);
-    const rounds = Number($('#battleRounds')?.value || 1);
-    const players = Number($('#battlePlayers')?.value || 2);
-    const cost = c.price * rounds;
-    if(!spendCoins(cost)) return toast(`Не хватает монет для баттла: нужно ◆ ${fmt(cost)}.`);
-    state.stats.battles++;
-    const names = ['Ты', ...Array.from({length:players-1}, (_,i)=>bots[(Math.floor(Math.random()*bots.length)+i)%bots.length])];
-    const rows = names.map(name => ({name,drops:[],total:0}));
-    for(let r=0;r<rounds;r++) rows.forEach(row => { const it = pickWeighted(c.pool); row.drops.push(it); row.total += it.value; });
-    const allDrops = rows.flatMap(row => row.drops);
-    rows.sort((a,b)=>b.total-a.total);
-    const win = rows[0].name === 'Ты';
-    if(win){
-      state.stats.battleWins++;
-      allDrops.map(it => createInstance(it,'Battle')).forEach(inst => { state.inventory.unshift(inst); setBest(inst); addHistory(inst,{caseName:'Battle'}); });
-    }
-    save(); renderDashboard(); renderProfile();
-    const table = rows.map((row,idx)=>`<tr class="${row.name==='Ты'?'you':''}"><td>#${idx+1}</td><td>${safe(row.name)}</td><td><div class="battle-drop-list">${row.drops.map(it=>`<span>${imgTag(it)}<small>${safe(it.name.split('|')[0].trim())}</small></span>`).join('')}</div></td><td>◆ ${fmt(row.total)}</td></tr>`).join('');
-    $('#battleResult').innerHTML = `<div class="battle-result ${win?'win':'lose'}"><h3>${win?'Победа в баттле':'Баттл проигран'}</h3><p>${win?'Ты забрал все выпавшие предметы баттла.':'Все дропы сгорели — риск-режим симулятора.'}</p><div class="table-wrap"><table><thead><tr><th>Место</th><th>Игрок</th><th>Дропы</th><th>Сумма</th></tr></thead><tbody>${table}</tbody></table></div></div>`;
-  }
-
-  function renderAds(){
-    const grid = $('#adProjects');
-    if(grid) grid.innerHTML = projects.map(p => `<article class="project-card"><span>${safe(p.badge)}</span><h3>${safe(p.title)}</h3><p>${safe(p.desc)}</p><a href="${safe(p.url)}" target="_blank" rel="noopener">Открыть</a></article>`).join('');
-    renderAdsStats();
-  }
-  function renderAdsStats(){
-    $('#adsWatched') && ($('#adsWatched').textContent = fmt(state.stats.ads));
-    $('#adsEarned') && ($('#adsEarned').textContent = fmt(state.stats.ads * 350));
-  }
-  let adTimer = null;
-  function startAd(){
-    const overlay = $('#adOverlay'); if(!overlay) return;
-    const project = projects[Math.floor(Math.random()*projects.length)];
-    const reward = 350;
-    $('#adTitle').textContent = project.title;
-    $('#adText').textContent = project.desc;
-    $('#adLink').href = project.url;
-    $('#adBadge').textContent = project.badge;
-    let t = 10;
-    $('#adTimer').textContent = t;
-    $('#adRewardBtn').disabled = true;
-    $('#adRewardBtn').textContent = 'Подожди...';
-    overlay.classList.remove('hidden');
-    clearInterval(adTimer);
-    adTimer = setInterval(() => {
-      t -= 1;
-      $('#adTimer').textContent = t;
-      if(t <= 0){
-        clearInterval(adTimer);
-        $('#adRewardBtn').disabled = false;
-        $('#adRewardBtn').textContent = `Получить ◆ ${fmt(reward)}`;
-      }
-    }, 1000);
-    $('#adRewardBtn').onclick = () => {
-      state.stats.ads++; addCoins(reward); renderAdsStats(); overlay.classList.add('hidden'); toast(`Начислено за рекламу: ◆ ${fmt(reward)}`);
-    };
+    const caseId = $('#battleCaseSelect')?.value; const c = catalog.cases.find(x=>x.id===caseId); if(!c) return;
+    if(!spend(c.price, `Case Battle: ${c.name}`)) return;
+    state.battles += 1; save();
+    const players = ['Ты','BOT Max','BOT Neo'].map(name => ({name, item:weightedItem(c)}));
+    const arena = $('#battleArena'); arena.innerHTML = players.map(p=>`<div class="panel"><h3>${esc(p.name)}</h3><div class="roulette-box"><div class="roulette-pointer"></div><div class="roulette-strip">${Array.from({length:34},()=>rollCard(weightedItem(c))).join('')}${rollCard(p.item)}</div></div><p class="spin-note">Крутится...</p></div>`).join('');
+    $$('.battle-layout .roulette-strip').forEach((strip,idx)=>{
+      strip.style.transition='none'; strip.style.transform='translateX(0)'; strip.getBoundingClientRect();
+      requestAnimationFrame(()=>{ strip.style.transition='transform 4s cubic-bezier(.08,.7,.06,1)'; strip.style.transform=`translateX(-${strip.scrollWidth-360-rand(0,70)}px)`; });
+    });
+    setTimeout(()=>{
+      const invs = players.map(p => ({...p, inv:addInventoryItem(p.item,'battle-temp')}));
+      // remove all temporary battle items, then award if user wins
+      removeInventory(invs.map(x=>x.inv.uid));
+      const max = Math.max(...invs.map(x=>x.inv.value));
+      const winner = invs.find(x=>x.inv.value===max);
+      arena.innerHTML = invs.map(x=>`<div class="panel ${winner.name===x.name?'rar-border':''}" style="--rar:${x.inv.rarityColor}"><h3>${esc(x.name)} ${winner.name===x.name?'🏆':''}</h3>${itemHtml(x.inv,{badge:money(x.inv.value)})}</div>`).join('');
+      if(winner.name === 'Ты'){
+        state.wins += 1;
+        invs.forEach(x => { const item = addInventoryItem({...x.item, value:x.inv.value}, 'battle-win'); addLive('Ты',item,item.value); });
+        toast('Ты выиграл баттл и забрал все предметы!', 'good');
+      }else toast(`Победил ${winner.name}. Предметы не начислены.`, 'bad');
+      save();
+    },4300);
   }
 
   function renderProfile(){
-    if(!$('#profileBalance')) return;
-    $('#profileBalance').textContent = fmt(state.balance);
-    $('#profileSpent').textContent = fmt(state.stats.spent);
-    $('#profileEarned').textContent = fmt(state.stats.earned);
-    $('#profileAds').textContent = fmt(state.stats.ads);
-    $('#profileUpgrades').textContent = `${fmt(state.stats.upgradeWins)}/${fmt(state.stats.upgrades)}`;
-    $('#profileBattles').textContent = `${fmt(state.stats.battleWins)}/${fmt(state.stats.battles)}`;
-    $('#profileContracts').textContent = fmt(state.stats.contracts);
-    $('#profileOpened').textContent = fmt(state.opened);
+    const root = $('#profileRoot'); if(!root) return;
+    root.innerHTML = `${statCards()}<div class="grid cards-3" style="margin-top:16px"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${money(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Всё хранится в localStorage браузера.</p><button class="btn" id="exportSaveBtn">Экспорт save</button><button class="btn" id="importSaveBtn" style="margin-left:8px">Импорт</button><textarea id="saveBox" rows="7" style="width:100%;margin-top:12px;background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px"></textarea></div><div class="panel danger-zone"><h3>Сброс</h3><p>Вернёт стартовый баланс и очистит инвентарь.</p><button class="btn red" data-reset-save>Сбросить прогресс</button></div></div><section class="section"><div class="section-head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,18).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><br><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'win':'lose'}">${t.amount>=0?'+':''}${money(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста</div>'}</div></section>`;
+    $('#exportSaveBtn')?.addEventListener('click',()=>{$('#saveBox').value = btoa(unescape(encodeURIComponent(JSON.stringify(state))));});
+    $('#importSaveBtn')?.addEventListener('click',()=>{try{ const obj=JSON.parse(decodeURIComponent(escape(atob($('#saveBox').value.trim())))); state=Object.assign(loadState(),obj); save(); toast('Save импортирован','good'); renderProfile(); }catch(e){toast('Не удалось импортировать save','bad');}});
   }
 
-  function bindEvents(){
-    document.body.addEventListener('click', e => {
-      const close = e.target.closest('[data-close]');
-      if(close){ closeModal(); return; }
-      const tab = e.target.closest('[data-case-tab]');
-      if(tab){
-        history.replaceState(null,'',`cases.html?case=${encodeURIComponent(tab.dataset.caseTab)}`);
-        renderCaseDetails(tab.dataset.caseTab); return;
-      }
-      const actionBtn = e.target.closest('[data-action]');
-      if(actionBtn){
-        const action = actionBtn.dataset.action, id = actionBtn.dataset.uid;
-        if(action === 'sell') sellItem(id);
-        if(action === 'upgrade') useForUpgrade(id);
-        if(action === 'contract') addToContract(id);
-        return;
-      }
-      const pick = e.target.closest('[data-contract-pick]');
-      if(pick){
-        const id = pick.dataset.contractPick;
-        if(state.contractBasket.includes(id)) state.contractBasket = state.contractBasket.filter(x => x !== id);
-        else if(state.contractBasket.length < 10) state.contractBasket.push(id);
-        else toast('В контракт можно добавить максимум 10 предметов.');
-        save(); renderContractsPage(); return;
-      }
-      const sellDrop = e.target.closest('[data-drop-sell]');
-      if(sellDrop){ const inst = state.inventory.find(x => x.uid === sellDrop.dataset.dropSell); sellItem(sellDrop.dataset.dropSell,true); closeModal(); toast(`Предмет продан${inst ? ` за ◆ ${fmt(inst.value)}` : ''}`); return; }
-      const upgradeDrop = e.target.closest('[data-drop-upgrade]');
-      if(upgradeDrop){ useForUpgrade(upgradeDrop.dataset.dropUpgrade); return; }
-      const contractDrop = e.target.closest('[data-drop-contract]');
-      if(contractDrop){ addToContract(contractDrop.dataset.dropContract); return; }
-      const again = e.target.closest('[data-open-again]');
-      if(again){ closeModal(); openCase(again.dataset.openAgain); return; }
-    });
-    $('#openCaseBtn')?.addEventListener('click', e => openCase(e.currentTarget.dataset.case || cases[0]?.id));
-    ['inventorySearch','rarityFilter','sortInventory'].forEach(id => $('#'+id)?.addEventListener('input', renderInventoryPage));
-    $('#sellAllBtn')?.addEventListener('click', () => {
-      if(!state.inventory.length) return toast('Инвентарь пуст.');
-      const value = state.inventory.reduce((s,x)=>s+x.value,0);
-      state.inventory = []; state.contractBasket = []; state.balance += value; state.stats.earned += value; save();
-      toast(`Весь инвентарь продан за ◆ ${fmt(value)}`); renderInventoryPage(); renderDashboard(); renderProfile();
-    });
-    $('#upgradeOwn')?.addEventListener('change', () => { state.selectedUpgrade = $('#upgradeOwn').value; save(); renderUpgradePage(); });
-    $('#upgradeTarget')?.addEventListener('change', updateUpgradeChance);
-    $('#upgradeBtn')?.addEventListener('click', doUpgrade);
-    $('#contractBtn')?.addEventListener('click', runContract);
-    $('#clearContractBtn')?.addEventListener('click', () => { state.contractBasket = []; save(); renderContractsPage(); });
-    $('#spinWheelBtn')?.addEventListener('click', spinWheel);
-    $('#dailyBtn')?.addEventListener('click', claimDaily);
-    $('#promoBtn')?.addEventListener('click', applyPromo);
-    ['battleCase','battleRounds','battlePlayers'].forEach(id => $('#'+id)?.addEventListener('change', updateBattleCost));
-    $('#startBattleBtn')?.addEventListener('click', startBattle);
-    $('#watchAdBtn')?.addEventListener('click', startAd);
-    $('#adCloseBtn')?.addEventListener('click', () => { $('#adOverlay')?.classList.add('hidden'); clearInterval(adTimer); });
-    $('#resetBtn')?.addEventListener('click', () => { if(confirm('Сбросить локальный прогресс?')){ state = defaultState(); save(); location.reload(); } });
-  }
-
-  function init(){
-    renderHeader(); updateWallet(); renderLiveFeed(); setInterval(tickLive, 4500);
-    renderDashboard(); renderCasesPage(); renderInventoryPage(); renderUpgradePage(); renderWheel(); updateDaily(); renderContractsPage(); renderBattlePage(); renderAds(); renderProfile();
-    bindEvents(); setInterval(updateWheelCooldown, 30000);
-  }
-
-  window.CS2Lab = {items,cases,state,openCase,sellItem,addCoins,spendCoins};
-  document.addEventListener('DOMContentLoaded', init);
 })();

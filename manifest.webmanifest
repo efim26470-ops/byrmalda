@@ -1,0 +1,9 @@
+{
+  "name": "CS2 Case Lab",
+  "short_name": "Case Lab",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#090c13",
+  "theme_color": "#090c13",
+  "icons": [{"src":"favicon.svg","sizes":"any","type":"image/svg+xml"}]
+}
