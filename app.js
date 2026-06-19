@@ -1,9 +1,17 @@
 (function(){
   'use strict';
 
-  const VERSION = '6.0.0';
-  const LS_KEY = 'cs2_case_lab_v6_state';
-  const API_CRATES = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/crates.json';
+  const VERSION = '7.0.0';
+  const LS_KEY = 'cs2_case_lab_v7_state';
+  const LEGACY_KEYS = ['cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state'];
+  const API_BASE = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/';
+  const API_CRATES = API_BASE + 'crates.json';
+  const API_STICKERS = API_BASE + 'stickers.json';
+  const API_AGENTS = API_BASE + 'agents.json';
+  const API_PATCHES = API_BASE + 'patches.json';
+  const API_KEYCHAINS = API_BASE + 'keychains.json';
+  const API_COLLECTIBLES = API_BASE + 'collectibles.json';
+  const LC_PER_USD = 100;
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -20,15 +28,15 @@
   const rarityColors = {
     'Consumer Grade':'#b0c3d9','Base Grade':'#b0c3d9','Industrial Grade':'#5e98d9','Mil-Spec Grade':'#4b69ff',
     'Restricted':'#8847ff','Classified':'#d32ce6','Covert':'#eb4b4b','Exceedingly Rare':'#ffd700','Extraordinary':'#e4ae33','Contraband':'#e4ae33',
-    'High Grade':'#4b69ff','Remarkable':'#8847ff','Exotic':'#d32ce6'
+    'High Grade':'#4b69ff','Remarkable':'#8847ff','Exotic':'#d32ce6','Distinguished':'#4b69ff','Exceptional':'#8847ff','Superior':'#d32ce6','Master':'#eb4b4b','Master Agent':'#eb4b4b','Superior Agent':'#d32ce6','Exceptional Agent':'#8847ff','Distinguished Agent':'#4b69ff'
   };
   const rarityValue = {
     'Consumer Grade':45,'Base Grade':45,'Industrial Grade':85,'Mil-Spec Grade':180,'Restricted':430,'Classified':1000,'Covert':2600,
-    'Exceedingly Rare':9000,'Extraordinary':8200,'Contraband':15000,'High Grade':190,'Remarkable':460,'Exotic':930
+    'Exceedingly Rare':9000,'Extraordinary':8200,'Contraband':15000,'High Grade':120,'Remarkable':360,'Exotic':850,'Distinguished':320,'Exceptional':780,'Superior':1550,'Master':3600,'Master Agent':3600,'Superior Agent':1550,'Exceptional Agent':780,'Distinguished Agent':320
   };
   const rarityWeight = {
     'Consumer Grade':90,'Base Grade':90,'Industrial Grade':75,'Mil-Spec Grade':62,'Restricted':18,'Classified':6,'Covert':2.2,
-    'Exceedingly Rare':0.5,'Extraordinary':0.5,'Contraband':0.08,'High Grade':26,'Remarkable':8,'Exotic':3
+    'Exceedingly Rare':0.5,'Extraordinary':0.5,'Contraband':0.08,'High Grade':28,'Remarkable':10,'Exotic':3.5,'Distinguished':24,'Exceptional':9,'Superior':4,'Master':1.3,'Master Agent':1.3,'Superior Agent':4,'Exceptional Agent':9,'Distinguished Agent':24
   };
   const wears = [
     ['Factory New',1.38,0.00,0.07],['Minimal Wear',1.16,0.07,0.15],['Field-Tested',0.96,0.15,0.38],['Well-Worn',0.78,0.38,0.45],['Battle-Scarred',0.64,0.45,0.99]
@@ -85,7 +93,20 @@
     return Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:it.image||svgSkin(it.name||'Skin')});
   }
   function loadState(){
-    try{ return normalizeState(JSON.parse(localStorage.getItem(LS_KEY)||'null')); }
+    try{
+      const current = localStorage.getItem(LS_KEY);
+      if(current) return normalizeState(JSON.parse(current));
+      for(const key of LEGACY_KEYS){
+        const legacy = localStorage.getItem(key);
+        if(legacy){
+          const imported = normalizeState(JSON.parse(legacy));
+          imported.version = VERSION;
+          try{ localStorage.setItem(LS_KEY, JSON.stringify(imported)); }catch(e){}
+          return imported;
+        }
+      }
+      return defaultState();
+    }
     catch(e){ return defaultState(); }
   }
   function save(){
@@ -142,6 +163,7 @@
   async function boot(){
     addToasts();
     initInstallPrompt();
+    purgeOldCaches();
     registerServiceWorker();
     renderGlobals();
     bindEvents();
@@ -155,79 +177,208 @@
     route();
   }
   function routeLoading(){ const r = $('[data-route-root]'); if(r) r.innerHTML = '<div class="empty">Загружаю данные...</div>'; }
-  async function loadCatalog(){
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    try{
-      const res = await fetch(API_CRATES, {cache:'no-store', signal:controller.signal});
-      clearTimeout(timeout);
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const crates = await res.json();
-      const built = buildCatalog(crates);
-      if(built.cases.length < 4) throw new Error('empty catalog');
-      return built;
-    }catch(e){
-      clearTimeout(timeout);
-      console.warn('CS2 API fallback:', e);
-      toast('Онлайн-каталог не загрузился — включил встроенный резервный пул. Механики всё равно работают.','warn');
-      return {items:fallbackItems, cases:fallbackCases, source:'offline-fallback'};
+
+  function purgeOldCaches(){
+    if('caches' in window){
+      caches.keys().then(keys => Promise.all(keys.filter(k => /cs2-case-lab-v[1-6]|cs2-case-lab-v5|cs2-case-lab-v6/.test(k)).map(k => caches.delete(k)))).catch(()=>{});
     }
   }
-  function buildCatalog(crates){
-    const preferredCases = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case','Glove Case','Operation Broken Fang Case','Chroma 3 Case','Falchion Case','Shadow Case','Winter Offensive Weapon Case'];
-    const preferredCollections = ['The Anubis Collection','The 2021 Mirage Collection','The 2021 Dust 2 Collection','The 2021 Vertigo Collection','The Ancient Collection','The Norse Collection','The Canals Collection','The St. Marc Collection','The Cobblestone Collection','The Cache Collection','The Overpass Collection','The Gods and Monsters Collection','The Chop Shop Collection','The Control Collection','The Havoc Collection'];
-    const casesRaw = crates.filter(c => c && c.type === 'Case' && Array.isArray(c.contains) && c.contains.length > 6);
-    const collectionsRaw = crates.filter(c => c && c.type === 'Collection' && Array.isArray(c.contains) && c.contains.length > 6);
+
+  async function loadJSON(url, timeoutMs=6500){
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try{
+      const res = await fetch(url, {cache:'no-store', signal:controller.signal});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      return await res.json();
+    }finally{ clearTimeout(timeout); }
+  }
+  async function loadCatalog(){
+    try{
+      const [cratesRes, stickersRes, agentsRes, patchesRes, keychainsRes, collectiblesRes] = await Promise.allSettled([
+        loadJSON(API_CRATES), loadJSON(API_STICKERS), loadJSON(API_AGENTS), loadJSON(API_PATCHES), loadJSON(API_KEYCHAINS), loadJSON(API_COLLECTIBLES)
+      ]);
+      const crates = cratesRes.status === 'fulfilled' ? cratesRes.value : [];
+      const stickers = stickersRes.status === 'fulfilled' ? stickersRes.value : [];
+      const agents = agentsRes.status === 'fulfilled' ? agentsRes.value : [];
+      const patches = patchesRes.status === 'fulfilled' ? patchesRes.value : [];
+      const keychains = keychainsRes.status === 'fulfilled' ? keychainsRes.value : [];
+      const collectibles = collectiblesRes.status === 'fulfilled' ? collectiblesRes.value : [];
+      const built = buildCatalog({crates, stickers, agents, patches, keychains, collectibles});
+      if(built.cases.length < 8 || built.items.length < 30) throw new Error('empty catalog');
+      return built;
+    }catch(e){
+      console.warn('CS2 API fallback:', e);
+      toast('Онлайн-каталог не загрузился — включил встроенный резервный пул. Механики всё равно работают.','warn');
+      return buildOfflineCatalog();
+    }
+  }
+  function buildOfflineCatalog(){
+    const stickers = ['Sticker | Natus Vincere | Copenhagen 2024','Sticker | Team Spirit | Shanghai 2024','Sticker | FaZe Clan | Paris 2023','Sticker | G2 Esports | Austin 2025','Sticker | m0NESY | Copenhagen 2024'].map((n,i)=>({id:'offline-sticker-'+i,name:n,rarity:['High Grade','Remarkable','Exotic','Extraordinary'][i%4],rarityColor:rarityColors[['High Grade','Remarkable','Exotic','Extraordinary'][i%4]],value:120+i*180,weight:20-i*3,image:svgSkin(n,'#facc15','#60a5fa'),category:'sticker'}));
+    const agents = ['Sir Bloody Miami Darryl | The Professionals','Cmdr. Mae | SWAT','Number K | The Professionals','Special Agent Ava | FBI'].map((n,i)=>({id:'offline-agent-'+i,name:n,rarity:['Master','Superior','Exceptional','Distinguished'][i%4],rarityColor:rarityColors[['Master','Superior','Exceptional','Distinguished'][i%4]],value:900+i*620,weight:9+i*2,image:svgSkin(n,'#111827','#f59e0b'),category:'agent'}));
+    const charms = ['Charm | Hot Hands','Charm | Baby Karat T','Charm | Lil Squirt','Charm | Chicken Lil'].map((n,i)=>({id:'offline-charm-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:180+i*190,weight:18-i*3,image:svgSkin(n,'#22c55e','#f97316'),category:'keychain'}));
+    const patches = ['Patch | Metal Gold Nova','Patch | Bravo','Patch | Bayonet Frog','Patch | Phoenix'].map((n,i)=>({id:'offline-patch-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:110+i*160,weight:18-i*3,image:svgSkin(n,'#94a3b8','#ef4444'),category:'patch'}));
+    const items = [...fallbackItems, ...stickers, ...agents, ...charms, ...patches];
+    const base = fallbackCases.map((c,i)=>withHiddenOdds(Object.assign({}, c, {items:c.items.map(applySteamLikePrice), price:Math.round(c.price*1.12), profitOdds:.42 + (i%4)*.08}),i));
+    return {items, cases:[...base,
+      createSpecialCase('quality-covert','Red Covert Case','Covert',items.filter(x=>x.rarity==='Covert'),2600,'Кейс с красными Covert-скинами.'),
+      createSpecialCase('quality-classified','Pink Classified Case','Classified',items.filter(x=>x.rarity==='Classified'),1500,'Кейс с Classified-скинами.'),
+      createSpecialCase('quality-restricted','Purple Restricted Case','Restricted',items.filter(x=>x.rarity==='Restricted'),850,'Кейс с Restricted-скинами.'),
+      createSpecialCase('quality-milspec','Blue Mil-Spec Case','Mil-Spec Grade',items.filter(x=>x.rarity==='Mil-Spec Grade'),430,'Кейс с Mil-Spec-скинами.'),
+      createSpecialCase('stickers-tournament','Tournament Stickers Case','High Grade',stickers,320,'Наклейки турниров.'),
+      createSpecialCase('agents-case','Agents Case','Exceptional',agents,900,'Агенты CS2.'),
+      createSpecialCase('charms-case','Armory Charms Case','Remarkable',charms,420,'Брелоки/charms.'),
+      createSpecialCase('patches-case','Patches Case','Remarkable',patches,360,'Нашивки CS2.')
+    ].filter(c=>c && c.items && c.items.length), source:'offline-fallback'};
+  }
+  function buildCatalog(data){
+    const crates = Array.isArray(data.crates) ? data.crates : [];
+    const stickersRaw = Array.isArray(data.stickers) ? data.stickers : [];
+    const agentsRaw = Array.isArray(data.agents) ? data.agents : [];
+    const patchesRaw = Array.isArray(data.patches) ? data.patches : [];
+    const keychainsRaw = Array.isArray(data.keychains) ? data.keychains : [];
+    const collectiblesRaw = Array.isArray(data.collectibles) ? data.collectibles : [];
+
+    const preferredCases = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case','Glove Case','Operation Broken Fang Case','Chroma 3 Case','Falchion Case','Shadow Case','Winter Offensive Weapon Case','Gallery Case','Fever Case'];
+    const preferredCollections = ['The Graphic Design Collection','The Sport & Field Collection','The Overpass 2024 Collection','The Gallery Collection','The Anubis Collection','The 2021 Mirage Collection','The 2021 Dust 2 Collection','The 2021 Vertigo Collection','The Ancient Collection','The Norse Collection','The Canals Collection','The St. Marc Collection','The Cobblestone Collection','The Cache Collection','The Overpass Collection','The Gods and Monsters Collection','The Chop Shop Collection','The Control Collection','The Havoc Collection'];
+    const casesRaw = crates.filter(c => c && c.type === 'Case' && Array.isArray(c.contains) && c.contains.length > 5);
+    const collectionsRaw = crates.filter(c => c && c.type === 'Collection' && Array.isArray(c.contains) && c.contains.length > 5);
     const pickedCases = [];
-    preferredCases.forEach(n => { const f = casesRaw.find(c => c.name === n); if(f) pickedCases.push(f); });
-    casesRaw.forEach(c => { if(pickedCases.length < 24 && !pickedCases.includes(c)) pickedCases.push(c); });
+    preferredCases.forEach(n => { const f = casesRaw.find(c => c.name === n); if(f && !pickedCases.includes(f)) pickedCases.push(f); });
+    casesRaw.forEach(c => { if(pickedCases.length < 80 && !pickedCases.includes(c)) pickedCases.push(c); });
     const pickedCollections = [];
-    preferredCollections.forEach(n => { const f = collectionsRaw.find(c => c.name === n); if(f) pickedCollections.push(f); });
-    collectionsRaw.forEach(c => { if(pickedCollections.length < 16 && !pickedCollections.includes(c)) pickedCollections.push(c); });
+    preferredCollections.forEach(n => { const f = collectionsRaw.find(c => c.name === n); if(f && !pickedCollections.includes(f)) pickedCollections.push(f); });
+    collectionsRaw.forEach(c => { if(pickedCollections.length < 50 && !pickedCollections.includes(c)) pickedCollections.push(c); });
 
     const all = new Map();
+    function remember(items){ items.forEach(it => { if(it && it.id) all.set(it.id, it); }); return items; }
     function mapCrate(c, idx, kind='case'){
-      const items = [];
-      [...(c.contains||[]), ...(c.contains_rare||[])].forEach(raw => {
-        const it = apiItem(raw);
-        if(it){ items.push(it); all.set(it.id,it); }
-      });
+      const rawList = [...(c.contains||[]), ...(c.contains_rare||[])];
+      const items = remember(rawList.map(raw => apiItem(raw, kind)).filter(Boolean));
       const price = calcPrice(items, idx, kind);
-      return {id:(kind==='collection'?'col-':'case-') + (c.id || slug(c.name)), name:c.name, price, image:c.image || svgCase(c.name), items, source:kind==='collection'?'CS2 Collection':'CS2 Case', kind, rareText:c.loot_list && c.loot_list.footer ? c.loot_list.footer : (kind==='collection'?'Коллекция CS2 с реальными названиями предметов.':'Редкий спецпредмет внутри')};
+      return withHiddenOdds({id:(kind==='collection'?'col-':'case-') + (c.id || slug(c.name)), name:c.name, price, image:c.image || svgCase(c.name), items, source:kind==='collection'?'CS2 Collection':'CS2 Case', kind, rareText:c.loot_list && c.loot_list.footer ? c.loot_list.footer : (kind==='collection'?'Коллекция CS2 с реальными названиями предметов.':'Редкий спецпредмет внутри')}, idx);
     }
     const cases = [];
     pickedCases.forEach((c,idx) => { const mapped = mapCrate(c, idx, 'case'); if(mapped.items.length) cases.push(mapped); });
     pickedCollections.forEach((c,idx) => { const mapped = mapCrate(c, idx, 'collection'); if(mapped.items.length) cases.push(mapped); });
 
-    let items = Array.from(all.values());
-    if(items.length < 20) items = fallbackItems;
-    const specialGroups = [
-      ['quality-milspec','Mil-Spec Case','Mil-Spec Grade', items.filter(i => i.rarity === 'Mil-Spec Grade'), 420, 'Кейс только с Mil-Spec предметами.'],
-      ['quality-restricted','Restricted Case','Restricted', items.filter(i => i.rarity === 'Restricted'), 790, 'Кейс только с Restricted предметами.'],
-      ['quality-classified','Classified Case','Classified', items.filter(i => i.rarity === 'Classified'), 1350, 'Кейс только с Classified предметами.'],
-      ['quality-covert','Covert Case','Covert', items.filter(i => i.rarity === 'Covert'), 2400, 'Кейс только с Covert предметами.'],
-      ['special-knives','Knife Case','Exceedingly Rare', items.filter(i => i.name.startsWith('★') && !/gloves/i.test(i.name)), 5200, 'Отдельный пул ножей.'],
-      ['special-gloves','Gloves Case','Extraordinary', items.filter(i => /gloves/i.test(i.name)), 5000, 'Отдельный пул перчаток.'],
-      ['special-rare','Knives & Gloves Case','Exceedingly Rare', items.filter(i => i.name.startsWith('★') || /gloves/i.test(i.name)), 6200, 'Ножи и перчатки в одном дорогом кейсе.']
-    ];
-    specialGroups.forEach(([idv,name,rar,pool,price,text]) => {
-      if(pool.length >= 3){
-        cases.push({id:idv, name, price, image:svgCase(name.replace(' Case','')), items:pool.map(x => Object.assign({}, x, {weight: rar.includes('Covert') ? 10 : (rar.includes('Rare')||rar==='Extraordinary'? 4 : 22)})), source:'Quality Pool', kind:'special', rareText:text});
-      }
-    });
-    return {items, cases, source:'CSGO-API'};
+    const stickers = remember(stickersRaw.map(x=>apiItem(x,'sticker')).filter(Boolean));
+    const agents = remember(agentsRaw.map(x=>apiItem(x,'agent')).filter(Boolean));
+    const patches = remember(patchesRaw.map(x=>apiItem(x,'patch')).filter(Boolean));
+    const keychains = remember(keychainsRaw.map(x=>apiItem(x,'keychain')).filter(Boolean));
+    const collectibles = remember(collectiblesRaw.map(x=>apiItem(x,'collectible')).filter(Boolean));
+
+    const itemList = () => Array.from(all.values()).filter(Boolean);
+    const items = itemList().length > 30 ? itemList() : fallbackItems;
+
+    const add = c => { if(c && c.items && c.items.length >= 2) cases.push(withHiddenOdds(c, cases.length)); };
+    add(createSpecialCase('quality-consumer','Grey / Consumer Case','Consumer Grade',items.filter(i=>['Consumer Grade','Base Grade'].includes(i.rarity)),120,'Низкая редкость / серый пул.'));
+    add(createSpecialCase('quality-industrial','Light Blue Industrial Case','Industrial Grade',items.filter(i=>i.rarity === 'Industrial Grade'),220,'Industrial Grade пул.'));
+    add(createSpecialCase('quality-milspec','Blue Mil-Spec Case','Mil-Spec Grade',items.filter(i=>i.rarity === 'Mil-Spec Grade'),430,'Синий Mil-Spec пул.'));
+    add(createSpecialCase('quality-restricted','Purple Restricted Case','Restricted',items.filter(i=>i.rarity === 'Restricted'),820,'Фиолетовый Restricted пул.'));
+    add(createSpecialCase('quality-classified','Pink Classified Case','Classified',items.filter(i=>i.rarity === 'Classified'),1500,'Розовый Classified пул.'));
+    add(createSpecialCase('quality-covert','Red Covert Case','Covert',items.filter(i=>i.rarity === 'Covert'),2700,'Красный Covert пул.'));
+    add(createSpecialCase('special-knives','Knife Case','Exceedingly Rare',items.filter(i => i.name.startsWith('★') && !/gloves/i.test(i.name)),5400,'Отдельный пул ножей.'));
+    add(createSpecialCase('special-gloves','Gloves Case','Extraordinary',items.filter(i => /gloves/i.test(i.name)),5200,'Отдельный пул перчаток.'));
+    add(createSpecialCase('special-rare','Knives & Gloves Case','Exceedingly Rare',items.filter(i => i.name.startsWith('★') || /gloves/i.test(i.name)),6500,'Ножи и перчатки в одном дорогом кейсе.'));
+
+    add(createSpecialCase('stickers-all','Sticker Capsule','High Grade',stickers,280,'Капсула с наклейками CS2.'));
+    add(createSpecialCase('stickers-tournament','Tournament Stickers Case','Remarkable',filterByWords(stickers,['Major','Copenhagen','Shanghai','Austin','Paris','Antwerp','Stockholm','Rio','Katowice','Cologne','Berlin','Krakow','Atlanta']),360,'Турнирные наклейки.'));
+    add(createSpecialCase('stickers-copenhagen','Copenhagen Stickers Capsule','Remarkable',filterByWords(stickers,['Copenhagen 2024']),390,'Наклейки Copenhagen 2024.'));
+    add(createSpecialCase('stickers-shanghai','Shanghai Stickers Capsule','Remarkable',filterByWords(stickers,['Shanghai 2024']),390,'Наклейки Shanghai 2024.'));
+    add(createSpecialCase('stickers-austin','Austin Stickers Capsule','Remarkable',filterByWords(stickers,['Austin 2025']),390,'Наклейки Austin 2025.'));
+    add(createSpecialCase('stickers-paris','Paris Stickers Capsule','Remarkable',filterByWords(stickers,['Paris 2023']),390,'Наклейки Paris 2023.'));
+
+    add(createSpecialCase('agents-all','Agents Case','Exceptional',agents,900,'Кейс с агентами CS2.'));
+    add(createSpecialCase('agents-master','Master Agents Case','Master',agents.filter(i=>/Master/i.test(i.rarity)),2300,'Пул дорогих агентов Master.'));
+    add(createSpecialCase('charms-all','Armory Charms Case','Remarkable',keychains,420,'Брелоки / charms из Armory.'));
+    add(createSpecialCase('charms-small-arms','Small Arms Charms Case','Remarkable',filterByWords(keychains,['Small Arms','Charm']),470,'Брелоки Small Arms.'));
+    add(createSpecialCase('patches-all','Patches Case','Remarkable',patches,330,'Кейс с нашивками.'));
+    add(createSpecialCase('collectibles-all','Collectibles Case','High Grade',collectibles,260,'Коллекционные предметы.'));
+
+    return {items, cases:dedupeCases(cases), source:'CSGO-API'};
   }
-  function apiItem(raw){
+  function dedupeCases(arr){
+    const seen = new Set();
+    return arr.filter(c => { if(!c || !c.id || seen.has(c.id)) return false; seen.add(c.id); return true; });
+  }
+  function filterByWords(items, words){
+    const low = words.map(w=>String(w).toLowerCase());
+    return items.filter(i => low.some(w => String(i.name).toLowerCase().includes(w)));
+  }
+  function createSpecialCase(idv,name,rar,pool,price,text){
+    pool = (pool || []).filter(Boolean).slice(0,240);
+    if(pool.length < 2) return null;
+    const items = pool.map(x => Object.assign({}, x, {weight: (rarityWeight[x.rarity] || 8) * (x.value > price ? .6 : 1.2)}));
+    return {id:idv, name, price, image:svgCase(name.replace(/ Case| Capsule| Collection/g,'')), items, source:'Custom Pool', kind:'special', rareText:text};
+  }
+  function withHiddenOdds(c, idx=0){
+    const profiles = [
+      {profitOdds:.34,jackpot:.20,cheap:.16},{profitOdds:.42,jackpot:.26,cheap:.10},{profitOdds:.50,jackpot:.33,cheap:.06},{profitOdds:.28,jackpot:.16,cheap:.20},{profitOdds:.58,jackpot:.40,cheap:.03}
+    ];
+    const p = profiles[Math.abs(idx) % profiles.length];
+    c._odds = p;
+    return c;
+  }
+  function apiItem(raw, category='skin'){
     if(!raw || !raw.name) return null;
-    const r = raw.rarity && raw.rarity.name ? raw.rarity.name : 'Mil-Spec Grade';
-    const base = rarityValue[r] || 180;
-    const isRare = raw.name.startsWith('★') || ['Exceedingly Rare','Extraordinary'].includes(r);
-    return {id:raw.id || slug(raw.name), name:raw.name, rarity:r, rarityColor:(raw.rarity && raw.rarity.color) || rarityColors[r] || '#60a5fa', image:raw.image || svgSkin(raw.name), value:Math.round(base * (isRare?1.18:1) * rnd(.85,1.28)), weight:rarityWeight[r] || 7};
+    const r = rarityName(raw, category);
+    const base = applySteamLikePrice({id:raw.id || slug(raw.market_hash_name || raw.name), name:raw.name, rarity:r, rarityColor:rarityColor(raw,r), image:raw.image || svgSkin(raw.name), category, marketHashName:raw.market_hash_name || raw.name, weight:rarityWeight[r] || 7});
+    return base;
+  }
+  function rarityName(raw, category){
+    const v = raw.rarity;
+    let r = typeof v === 'string' ? v : (v && (v.name || v.id)) || raw.rarity_name || '';
+    r = String(r || '').replace(/_/g,' ').trim();
+    if(!r){
+      if(category === 'agent') r = 'Exceptional';
+      else if(category === 'sticker' || category === 'patch' || category === 'keychain') r = 'High Grade';
+      else r = 'Mil-Spec Grade';
+    }
+    if(/master/i.test(r) && category === 'agent') return 'Master';
+    if(/superior/i.test(r) && category === 'agent') return 'Superior';
+    if(/exceptional/i.test(r) && category === 'agent') return 'Exceptional';
+    if(/distinguished/i.test(r) && category === 'agent') return 'Distinguished';
+    return r;
+  }
+  function rarityColor(raw,r){ return (raw.rarity && raw.rarity.color) || raw.color || rarityColors[r] || '#60a5fa'; }
+  function applySteamLikePrice(it){
+    const name = String(it.name || '');
+    const lower = name.toLowerCase();
+    const known = knownSteamUSD(lower);
+    const baseMap = { 'Consumer Grade':0.05,'Base Grade':0.06,'Industrial Grade':0.18,'Mil-Spec Grade':0.55,'Restricted':2.2,'Classified':8.5,'Covert':24,'Contraband':6500,'Exceedingly Rare':360,'Extraordinary':290,'High Grade':0.35,'Remarkable':1.4,'Exotic':5.5,'Distinguished':2.7,'Exceptional':6.8,'Superior':14,'Master':32,'Master Agent':32,'Superior Agent':14,'Exceptional Agent':6.8,'Distinguished Agent':2.7 };
+    let usd = known || baseMap[it.rarity] || 1;
+    if(it.category === 'sticker') usd *= /gold|holo|lenticular|foil/i.test(name) ? 2.6 : 1;
+    if(it.category === 'patch') usd *= 0.85;
+    if(it.category === 'keychain') usd *= 1.15;
+    if(it.category === 'collectible') usd *= 0.75;
+    if(/dragon lore|wild lotus|gungnir|howl|fire serpent|medusa|hydroponic|poseidon|desert hydra/i.test(name)) usd *= 1.8;
+    const noise = .72 + stableNoise(name) * .72;
+    const value = Math.max(6, Math.round(usd * LC_PER_USD * noise));
+    return Object.assign({}, it, {value, steamUsd:Math.round(usd*noise*100)/100, weight: it.weight || rarityWeight[it.rarity] || 7});
+  }
+  function knownSteamUSD(lower){
+    const m = [
+      ['dragon lore',9500],['howl',5600],['wild lotus',7100],['gungnir',8300],['fire serpent',980],['medusa',4100],['desert hydra',1750],['prince',2400],['poseidon',1350],['hydroponic',1800],['dlore',9500],
+      ['asiimov',58],['printstream',62],['vulcan',185],['kill confirmed',95],['neo-noir',31],['redline',23],['head shot',29],['the empress',78],['bloodsport',66],['bullet queen',38],['case hardened',110],['doppler',620],['gamma doppler',760],['fade',720],['slaughter',510],['crimson web',450],['vice',1400],['pandora',5300],['king snake',1150],['imperial plaid',820]
+    ];
+    const f = m.find(([k])=>lower.includes(k));
+    return f ? f[1] : 0;
+  }
+  function stableNoise(str){
+    let h=2166136261; str=String(str||'');
+    for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h,16777619); }
+    return ((h>>>0) % 1000) / 1000;
   }
   function calcPrice(items, idx, kind='case'){
-    const avg = items.reduce((s,x)=>s+(x.value||0),0) / Math.max(1,items.length);
-    const mult = kind === 'collection' ? .48 : kind === 'special' ? .62 : .55;
-    return clamp(Math.round(avg*mult + 340 + idx*18), 250, kind === 'special' ? 6800 : 2600);
+    if(!items.length) return 300;
+    const avg = weightedAverageValue(items);
+    const mult = kind === 'collection' ? .58 : kind === 'special' ? .72 : .64;
+    return clamp(Math.round(avg*mult + 180 + idx*11), 120, kind === 'special' ? 13000 : 4800);
+  }
+  function weightedAverageValue(items){
+    const sumW = items.reduce((s,x)=>s+(rarityWeight[x.rarity]||x.weight||6),0) || 1;
+    return items.reduce((s,x)=>s+(x.value||0)*(rarityWeight[x.rarity]||x.weight||6),0) / sumW;
   }
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9а-яё]+/gi,'-').replace(/^-|-$/g,''); }
 
@@ -333,12 +484,16 @@
   }
   function renderCases(){
     const root = $('#casesRoot'); if(!root) return;
+    const is = (...ids) => c => ids.includes(c.id);
     const groups = [
-      ['Официальные кейсы', catalog.cases.filter(c=>c.kind==='case')],
-      ['Коллекции CS2', catalog.cases.filter(c=>c.kind==='collection')],
-      ['Кейсы по качеству', catalog.cases.filter(c=>c.kind==='special')]
+      ['Официальные оружейные кейсы', catalog.cases.filter(c=>c.kind==='case')],
+      ['Коллекции CS2 / Armory Pass', catalog.cases.filter(c=>c.kind==='collection')],
+      ['Кейсы по качеству / цвету', catalog.cases.filter(c=>/^quality-/.test(c.id))],
+      ['Ножи и перчатки', catalog.cases.filter(c=>/^special-/.test(c.id))],
+      ['Турнирные наклейки', catalog.cases.filter(c=>/^stickers-/.test(c.id))],
+      ['Агенты, брелоки, нашивки', catalog.cases.filter(c=>/^(agents|charms|patches|collectibles)-/.test(c.id))]
     ];
-    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> сайт работает на GitHub Pages и может открываться как обычная ссылка. Локальный .bat больше не нужен для пользователя, он оставлен только как быстрый тестовый вариант.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
+    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> добавлены расширенные CS2-пулы: кейсы, коллекции, quality-кейсы, стикеры турниров, агенты, charms/брелоки и patches. Шансы окупа настроены отдельно для каждого кейса и не выводятся в интерфейсе.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
   }
   function openCaseModal(caseId, autoSpin){
     const c = catalog.cases.find(x => x.id === caseId);
@@ -356,10 +511,22 @@
   function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'Skin')}'"><b>${esc(it.name)}</b></div>`; }
   function weighted(c){
     const pool = c && c.items && c.items.length ? c.items : fallbackItems;
-    const total = pool.reduce((s,x)=>s+(toNum(x.weight,6)),0);
+    const weights = pool.map(it => hiddenCaseWeight(it,c));
+    const total = weights.reduce((s,x)=>s+x,0) || 1;
     let r = Math.random() * total;
-    for(const it of pool){ r -= toNum(it.weight,6); if(r <= 0) return it; }
+    for(let i=0;i<pool.length;i++){ r -= weights[i]; if(r <= 0) return pool[i]; }
     return pool[pool.length-1];
+  }
+  function hiddenCaseWeight(it,c){
+    let w = Math.max(0.01, toNum(it.weight, rarityWeight[it.rarity] || 6));
+    const price = Math.max(1, toNum(c && c.price, 1));
+    const ratio = toNum(it.value,0) / price;
+    const odds = (c && c._odds) || {profitOdds:.42,jackpot:.25,cheap:.1};
+    if(ratio >= 1) w *= odds.profitOdds;
+    if(ratio >= 2.2) w *= odds.jackpot;
+    if(ratio < .45) w *= (1 + odds.cheap);
+    if(c && c.kind === 'special') w *= ratio >= 1 ? 0.82 : 1.08;
+    return w;
   }
   function spinCase(caseId){
     if(busy.case) return toast('Рулетка уже крутится','warn');
@@ -397,24 +564,25 @@
 
   function renderInventory(){
     const root = $('#inventoryRoot'); if(!root) return;
-    const q = ($('#invSearch') && $('#invSearch').value || '').toLowerCase().trim();
-    const r = $('#invRarity') ? $('#invRarity').value : 'all';
-    const s = $('#invSort') ? $('#invSort').value : 'new';
-    const rarities = [...new Set(state.inventory.map(x=>x.rarity))].sort();
     const controls = $('#inventoryControls');
-    if(controls && !controls.dataset.ready){
-      controls.innerHTML = `<input id="invSearch" placeholder="Поиск по названию"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new">Сначала новые</option><option value="valueDesc">Сначала дорогие</option><option value="valueAsc">Сначала дешёвые</option><option value="rarity">По редкости</option></select><button class="small-btn" data-action="sell-cheap">Продать дешевле 200 LC</button>`;
-      controls.dataset.ready = '1';
-      return renderInventory();
+    const prevQ = ($('#invSearch') && $('#invSearch').value || '').toLowerCase().trim();
+    const prevR = $('#invRarity') ? $('#invRarity').value : 'all';
+    const prevS = $('#invSort') ? $('#invSort').value : 'new';
+    const rarities = [...new Set(state.inventory.map(x=>x.rarity).filter(Boolean))].sort((a,b)=>(rarityValue[b]||0)-(rarityValue[a]||0));
+    if(controls){
+      controls.innerHTML = `<input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select><button class="small-btn" data-action="sell-cheap">Продать дешевле 200 LC</button>`;
     }
-    let arr = [...state.inventory];
+    const q = ($('#invSearch') && $('#invSearch').value || prevQ).toLowerCase().trim();
+    const r = $('#invRarity') ? $('#invRarity').value : prevR;
+    const srt = $('#invSort') ? $('#invSort').value : prevS;
+    let arr = [...state.inventory].map(normalizeInvItem).filter(Boolean);
     if(q) arr = arr.filter(x => (x.displayName||x.name).toLowerCase().includes(q));
     if(r !== 'all') arr = arr.filter(x => x.rarity === r);
-    if(s === 'valueDesc') arr.sort((a,b)=>b.value-a.value);
-    else if(s === 'valueAsc') arr.sort((a,b)=>a.value-b.value);
-    else if(s === 'rarity') arr.sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0));
+    if(srt === 'valueDesc') arr.sort((a,b)=>b.value-a.value);
+    else if(srt === 'valueAsc') arr.sort((a,b)=>a.value-b.value);
+    else if(srt === 'rarity') arr.sort((a,b)=>(rarityValue[b.rarity]||0)-(rarityValue[a.rarity]||0));
     else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
-    root.innerHTML = arr.length ? `<div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
+    root.innerHTML = arr.length ? `<div class="grid item-grid">${arr.map(x=>itemCard(x,{buttons:`<button data-sell="${esc(x.uid)}">Продать</button><button data-upgrade-item="${esc(x.uid)}">Апгрейд</button><button data-contract-item="${esc(x.uid)}">Контракт</button>`})).join('')}</div>` : `<div class="empty"><h3>Инвентарь пуст</h3><p>Открой кейс, выиграй battle или прокрути колесо. Если только что обновлял сайт на GitHub Pages — нажми Ctrl+F5, чтобы браузер не держал старый cache.</p><a class="btn primary" href="cases.html">К кейсам</a></div>`;
   }
   function sellCheap(){
     const cheap = state.inventory.filter(x => x.value < 200);
@@ -632,12 +800,12 @@
   }
   function renderInstall(){
     const root = $('#installRoot'); if(!root) return;
-    root.innerHTML = `<div class="grid cards-3"><article class="panel"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel"><span class="kicker">iPhone / iPad</span><h2>Иконка на главный экран</h2><p>Для iOS установка идёт через Safari, без exe и без App Store.</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button></article><article class="panel"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block"><b>Важно:</b> реальный лимит «10 реклам на IP» невозможен в чистом GitHub Pages без бэкенда. В этой версии лимит реализован честно для браузера/устройства через localStorage.</div>`;
+    root.innerHTML = `<div class="grid cards-3"><article class="panel"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel"><span class="kicker">iPhone / iPad</span><h2>Иконка на главный экран</h2><p>Для iOS установка идёт через Safari, без exe и без App Store.</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button></article><article class="panel"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block"><b>Важно:</b> реальный лимит «10 реклам на IP» невозможен в чистом GitHub Pages без бэкенда. В этой версии лимит реализован для браузера/устройства через localStorage; для IP-лимита нужен сервер или Cloudflare Worker.</div>`;
   }
 
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит v6-сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит v7-сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
     if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 LC?')) return;
