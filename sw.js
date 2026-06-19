@@ -1,16 +1,13 @@
-const CACHE_NAME = 'cs2-case-lab-v9-no-cache';
-self.addEventListener('install', event => {
-  self.skipWaiting();
-});
+const CACHE_NAME = 'cs2-case-lab-v13-network-first';
+self.addEventListener('install', event => { self.skipWaiting(); });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => /cs2-case-lab/i.test(k)).map(k => caches.delete(k)));
-    await self.registration.unregister();
-    const clients = await self.clients.matchAll({type:'window'});
-    clients.forEach(c => c.navigate(c.url));
+    await Promise.all(keys.filter(k => /cs2-case-lab/i.test(k) && k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
   })());
 });
 self.addEventListener('fetch', event => {
-  event.respondWith(fetch(event.request));
+  if(event.request.method !== 'GET') return;
+  event.respondWith(fetch(event.request, {cache:'no-store'}).catch(() => caches.match(event.request)));
 });

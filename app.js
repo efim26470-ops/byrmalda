@@ -1,9 +1,13 @@
 (function(){
   'use strict';
 
-  const VERSION = '9.0.0';
+  const VERSION = '13.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
+  const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
+  const IDB_DB = 'cs2_case_lab_db';
+  const IDB_STORE = 'saves';
+  const IDB_SAVE_ID = 'main';
   const LEGACY_KEYS = ['cs2_case_lab_state','cs2_case_lab_state_backup','cs2_case_lab_v8_state','cs2_case_lab_v7_state','cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state','cs2_case_lab_v3_state','cs2_case_lab_v2_state'];
   const API_BASE = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/';
   const API_CRATES = API_BASE + 'crates.json';
@@ -14,18 +18,28 @@
   const API_COLLECTIBLES = API_BASE + 'collectibles.json';
   const API_SKINS = API_BASE + 'skins.json';
   const API_COLLECTIONS = API_BASE + 'collections.json';
-  const LC_PER_USD = 100;
+  const RUB_PER_USD = 92;
+  const CURRENCY = '₽LC';
+  const PRICE_VERSION = 'rub-v13';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
+  const PROMO_CODES = Object.freeze({
+    WELCOME13: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
+    KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 50000, TEST100K: 100000
+  });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const clamp = (n,a,b) => Math.max(a, Math.min(b, n));
-  const rnd = (a,b) => a + Math.random() * (b-a);
-  const sample = arr => arr[Math.floor(Math.random() * arr.length)];
+  const rnd = (a,b) => a + cryptoRandom() * (b-a);
+  function cryptoRandom(){
+    try{ const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] / 4294967296; }
+    catch(e){ return Math.random(); }
+  }
+  const sample = arr => arr[Math.floor(cryptoRandom() * arr.length)];
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-  const fmt = n => `${Math.round(Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('ru-RU')} LC`;
+  const fmt = n => `${Math.round(Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('ru-RU')} ${CURRENCY}`;
   const id = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
   const rarityColors = {
@@ -60,7 +74,7 @@
     ['ump_primal','UMP-45 | Primal Saber','Classified',870,'#f59e0b','#eab308'],['famas_mecha','FAMAS | Mecha Industries','Classified',900,'#e5e7eb','#f97316'],['galil_chatter','Galil AR | Chatterbox','Covert',1700,'#facc15','#111827'],
     ['knife_butterfly','★ Butterfly Knife | Doppler','Exceedingly Rare',12800,'#22d3ee','#a855f7'],['knife_karambit','★ Karambit | Gamma Doppler','Exceedingly Rare',14200,'#22c55e','#38bdf8'],['knife_kukri','★ Kukri Knife | Case Hardened','Exceedingly Rare',9800,'#f59e0b','#60a5fa'],
     ['gloves_sport','★ Sport Gloves | Vice','Extraordinary',11000,'#f472b6','#8b5cf6'],['gloves_driver','★ Driver Gloves | King Snake','Extraordinary',8700,'#f8fafc','#94a3b8'],['gloves_broken','★ Broken Fang Gloves | Jade','Extraordinary',7600,'#22c55e','#064e3b']
-  ].map(x => ({id:x[0],name:x[1],rarity:x[2],value:x[3],rarityColor:rarityColors[x[2]]||'#60a5fa',weight:rarityWeight[x[2]]||8,image:svgSkin(x[1],x[4],x[5])}));
+  ].map(x => ({id:x[0],name:x[1],rarity:x[2],value:x[3],rarityColor:rarityColors[x[2]]||'#60a5fa',weight:rarityWeight[x[2]]||8,image:svgSkin(x[1],x[4],x[5])})).map(applySteamLikePrice);
   const fallbackCases = [
     {id:'kilowatt',name:'Kilowatt Case',price:650,image:svgCase('KILO'),items:fallbackItems.slice(0,18).concat(fallbackItems.slice(-4)),source:'offline-fallback'},
     {id:'revolution',name:'Revolution Case',price:720,image:svgCase('REV'),items:fallbackItems.slice(4,23).concat(fallbackItems.slice(-4)),source:'offline-fallback'},
@@ -70,14 +84,16 @@
   ];
   let catalog = {items:fallbackItems, cases:fallbackCases, source:'fallback'};
   let storageWarned = false;
+  let storageHealth = {local:false, session:false, indexedDB:false, windowName:false, mode:'starting', lastError:''};
   cleanupStorageBeforeLoad();
   let state = loadState();
   let busy = {case:false,wheel:false,battle:false,ad:false,upgrade:false};
+  let bootLoaded = false;
   let live = [];
   let wheelDeg = 0;
   let currentCase = null;
 
-  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],createdAt:Date.now(),savedAt:Date.now()}; }
   function toNum(v,d=0){ const n = Number(String(v).replace(/\s/g,'').replace(',','.')); return Number.isFinite(n) ? n : d; }
   function normalizeState(raw){
     const base = defaultState();
@@ -90,12 +106,18 @@
     s.contractSelected = Array.isArray(s.contractSelected) ? s.contractSelected : [];
     s.lastWheelAt = Math.max(0, Math.round(toNum(s.lastWheelAt,0)));
     s.adViews = (s.adViews && typeof s.adViews === 'object') ? s.adViews : {};
+    s.usedPromos = Array.isArray(s.usedPromos) ? s.usedPromos.map(x=>String(x).toUpperCase()).slice(0,100) : [];
     return s;
   }
   function normalizeInvItem(it){
     if(!it || !(it.name || it.displayName)) return null;
     const r = it.rarity || 'Mil-Spec Grade';
-    return Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:it.image||svgSkin(it.name||'Skin')});
+    let normalized = Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:it.image||svgSkin(it.name||'Skin'), currency:it.currency||CURRENCY, priceVersion:it.priceVersion||''});
+    if(normalized.priceVersion !== PRICE_VERSION){
+      const repriced = applySteamLikePrice(normalized);
+      normalized.value = repriced.value; normalized.steamUsd = repriced.steamUsd; normalized.steamRub = repriced.steamRub; normalized.currency = CURRENCY; normalized.priceVersion = PRICE_VERSION;
+    }
+    return normalized;
   }
   function allSaveKeys(){
     const keys = new Set([LS_KEY, ...LEGACY_KEYS]);
@@ -114,17 +136,17 @@
       uid: it.uid || id(), id: it.id || it.baseId || slug(it.name || it.displayName || 'item'), baseId: it.baseId || it.id || slug(it.name || it.displayName || 'item'),
       name: it.name || it.displayName || 'CS2 Item', displayName: it.displayName || it.name || 'CS2 Item',
       rarity: r, rarityColor: it.rarityColor || rarityColors[r] || '#60a5fa', category: it.category || 'skin',
-      value: Math.max(1, Math.round(toNum(it.value, 100))), steamUsd: it.steamUsd || undefined, marketHashName: it.marketHashName || it.market_hash_name || it.name,
+      value: Math.max(1, Math.round(toNum(it.value, 100))), steamUsd: it.steamUsd || undefined, steamRub: it.steamRub || undefined, currency: it.currency || CURRENCY, priceVersion: it.priceVersion || PRICE_VERSION, marketHashName: it.marketHashName || it.market_hash_name || it.name,
       image: it.image || svgSkin(it.name || it.displayName || 'CS2 Item'), wear: it.wear || '', float: it.float || '', source: it.source || '', addedAt: Math.max(0, Math.round(toNum(it.addedAt, Date.now())))
     };
   }
   function compactState(raw){
     const s = normalizeState(raw);
     return {
-      version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,500),
+      version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,700),
       opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins,
-      tx:(s.tx||[]).slice(0,50).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
-      pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{},
+      tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
+      pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[],
       createdAt:s.createdAt||Date.now(), savedAt:Date.now()
     };
   }
@@ -141,47 +163,140 @@
       }
     }catch(e){}
   }
-  function loadState(){
+  function parseStateRaw(raw){
+    if(!raw || typeof raw !== 'string') return null;
+    try{ return normalizeState(JSON.parse(raw)); }catch(e){ return null; }
+  }
+  function readWindowNameState(){
+    try{
+      const wn = String(window.name || '');
+      const idx = wn.indexOf(WINDOW_SAVE_PREFIX);
+      if(idx < 0) return null;
+      return parseStateRaw(wn.slice(idx + WINDOW_SAVE_PREFIX.length));
+    }catch(e){ return null; }
+  }
+  function writeWindowName(raw){
+    try{
+      window.name = WINDOW_SAVE_PREFIX + raw;
+      storageHealth.windowName = true;
+      return true;
+    }catch(e){ return false; }
+  }
+  function bestState(candidates){
+    const valid = candidates.filter(Boolean).map(normalizeState);
+    if(!valid.length) return defaultState();
+    valid.sort((a,b)=>{
+      const sa = toNum(a.savedAt || a.createdAt,0), sb = toNum(b.savedAt || b.createdAt,0);
+      if(sa !== sb) return sb - sa;
+      const ia = Array.isArray(a.inventory) ? a.inventory.length : 0;
+      const ib = Array.isArray(b.inventory) ? b.inventory.length : 0;
+      if(ia !== ib) return ib - ia;
+      return toNum(b.balance,0) - toNum(a.balance,0);
+    });
+    return valid[0];
+  }
+  function loadState(fallback=true){
     const candidates = [];
-    try{ const raw = localStorage.getItem(LS_KEY); if(raw) candidates.push(normalizeState(JSON.parse(raw))); }catch(e){}
-    try{ const raw = sessionStorage.getItem(BACKUP_KEY); if(raw) candidates.push(normalizeState(JSON.parse(raw))); }catch(e){}
-    if(candidates.length){
-      candidates.sort((a,b)=>{
-        const sa = toNum(a.savedAt || a.createdAt,0), sb = toNum(b.savedAt || b.createdAt,0);
-        if(sa !== sb) return sb - sa;
-        const ia = Array.isArray(a.inventory) ? a.inventory.length : 0;
-        const ib = Array.isArray(b.inventory) ? b.inventory.length : 0;
-        if(ia !== ib) return ib - ia;
-        return toNum(b.balance,0) - toNum(a.balance,0);
+    try{ const raw = localStorage.getItem(LS_KEY); if(raw){ storageHealth.local = true; candidates.push(parseStateRaw(raw)); } }catch(e){ storageHealth.local = false; storageHealth.lastError = e && e.name ? e.name : String(e); }
+    try{ const raw = sessionStorage.getItem(BACKUP_KEY); if(raw){ storageHealth.session = true; candidates.push(parseStateRaw(raw)); } }catch(e){ storageHealth.session = false; }
+    const wn = readWindowNameState(); if(wn) candidates.push(wn);
+    return candidates.length ? bestState(candidates) : (fallback ? defaultState() : null);
+  }
+  function openIDB(){
+    return new Promise((resolve, reject)=>{
+      if(!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
+      const req = indexedDB.open(IDB_DB, 1);
+      req.onupgradeneeded = () => { try{ req.result.createObjectStore(IDB_STORE); }catch(e){} };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('IndexedDB error'));
+      req.onblocked = () => reject(new Error('IndexedDB blocked'));
+    });
+  }
+  async function idbGet(){
+    let db;
+    try{
+      db = await openIDB();
+      return await new Promise((resolve,reject)=>{
+        const tx = db.transaction(IDB_STORE,'readonly');
+        const req = tx.objectStore(IDB_STORE).get(IDB_SAVE_ID);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error || new Error('IDB get error'));
       });
-      return candidates[0];
-    }
-    return defaultState();
+    }catch(e){ storageHealth.indexedDB = false; storageHealth.lastError = e && e.name ? e.name : String(e); return null; }
+    finally{ try{ db && db.close(); }catch(e){} }
+  }
+  async function idbSet(raw){
+    let db;
+    try{
+      db = await openIDB();
+      await new Promise((resolve,reject)=>{
+        const tx = db.transaction(IDB_STORE,'readwrite');
+        tx.objectStore(IDB_STORE).put(raw, IDB_SAVE_ID);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error || new Error('IDB put error'));
+      });
+      storageHealth.indexedDB = true;
+      storageHealth.mode = storageHealth.local ? 'localStorage + IndexedDB backup' : 'IndexedDB fallback';
+      return true;
+    }catch(e){ storageHealth.indexedDB = false; storageHealth.lastError = e && e.name ? e.name : String(e); return false; }
+    finally{ try{ db && db.close(); }catch(e){} }
+  }
+  async function idbDelete(){
+    let db;
+    try{
+      db = await openIDB();
+      await new Promise((resolve,reject)=>{
+        const tx = db.transaction(IDB_STORE,'readwrite');
+        tx.objectStore(IDB_STORE).delete(IDB_SAVE_ID);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error || new Error('IDB delete error'));
+      });
+    }catch(e){}
+    finally{ try{ db && db.close(); }catch(e){} }
+  }
+  async function loadStateAsync(){
+    const sync = loadState(false);
+    const idbRaw = await idbGet();
+    const idbState = parseStateRaw(idbRaw);
+    const best = bestState([sync, idbState]);
+    storageHealth.mode = storageHealth.local ? 'localStorage' : (storageHealth.indexedDB ? 'IndexedDB fallback' : (storageHealth.session ? 'sessionStorage' : 'window.name / memory'));
+    return best;
   }
   function save(){
     state = compactState(state);
     const raw = JSON.stringify(state);
-    let okLocal = false, okSession = false;
-    try{ sessionStorage.setItem(BACKUP_KEY, raw); okSession = true; }catch(e){}
+    let okLocal = false, okSession = false, okWindow = false;
+    try{ sessionStorage.setItem(BACKUP_KEY, raw); okSession = true; storageHealth.session = true; }catch(e){ storageHealth.session = false; }
+    okWindow = writeWindowName(raw);
     try{
       cleanupStorageBeforeLoad();
       localStorage.setItem(LS_KEY, raw);
       okLocal = true;
+      storageHealth.local = true;
     }catch(e){
+      storageHealth.local = false;
+      storageHealth.lastError = e && e.name ? e.name : String(e);
       try{
         for(let i=localStorage.length-1;i>=0;i--){ const k = localStorage.key(i); if(k && /cs2_case_lab/i.test(k) && k !== LS_KEY) localStorage.removeItem(k); }
         localStorage.setItem(LS_KEY, raw);
         okLocal = true;
-      }catch(err){
-        console.warn('localStorage недоступен', err);
+        storageHealth.local = true;
+      }catch(err){ storageHealth.lastError = err && err.name ? err.name : String(err); }
+    }
+    idbSet(raw).then(ok => {
+      if(ok){ storageHealth.indexedDB = true; renderGlobals(); }
+      else if(!okLocal && !okSession && !okWindow && !storageWarned){
+        storageWarned = true;
+        toast('Браузер запретил постоянное сохранение. Прогресс держится только в памяти этой вкладки.', 'bad');
       }
-    }
-    if(!okLocal && !storageWarned){
-      storageWarned = true;
-      toast(okSession ? 'Прогресс временно сохранён в этой вкладке. Для постоянного save разреши localStorage/cookies.' : 'Браузер не дал сохранить прогресс. Проверь private mode / запрет cookies.', 'bad');
-    }
+    });
+    if(okLocal) storageHealth.mode = 'localStorage';
+    else if(storageHealth.indexedDB) storageHealth.mode = 'IndexedDB fallback';
+    else if(okSession) storageHealth.mode = 'sessionStorage';
+    else if(okWindow) storageHealth.mode = 'window.name';
+    else storageHealth.mode = 'memory';
     renderGlobals();
-    return okLocal || okSession;
+    return okLocal || storageHealth.indexedDB || okSession || okWindow;
   }
   function addTx(text, amount){ state.tx.unshift({id:id(), text, amount:Math.round(amount), time:Date.now()}); state.tx = state.tx.slice(0,60); }
   function earn(amount, reason='Начисление'){
@@ -195,7 +310,7 @@
   function spend(amount, reason='Списание'){
     amount = Math.max(0, Math.round(toNum(amount,0)));
     state.balance = Math.round(toNum(state.balance,15000));
-    if(state.balance < amount){ toast(`Недостаточно LabCoins: нужно ${fmt(amount)}, у тебя ${fmt(state.balance)}`,'bad'); save(); return false; }
+    if(state.balance < amount){ toast(`Недостаточно ₽LC: нужно ${fmt(amount)}, у тебя ${fmt(state.balance)}`,'bad'); save(); return false; }
     state.balance -= amount;
     state.spent += amount;
     addTx(reason, -amount);
@@ -205,7 +320,7 @@
   }
   function addItem(base, source='drop'){
     const w = sample(wears);
-    const stattrak = Math.random() < 0.07 && !String(base.name).startsWith('★');
+    const stattrak = cryptoRandom() < 0.07 && !String(base.name).startsWith('★');
     const value = Math.max(1, Math.round(toNum(base.value,100) * w[1] * (stattrak?1.5:1) * rnd(.88,1.16)));
     const item = compactInvItem(Object.assign({}, base, {uid:id(), baseId:base.id, displayName:(stattrak?'StatTrak™ ':'') + base.name, wear:w[0], float:rnd(w[2],w[3]).toFixed(5), value, source, addedAt:Date.now()}));
     state.inventory.unshift(item);
@@ -231,10 +346,14 @@
 
   async function boot(){
     addToasts();
+    initIOSViewport();
     initInstallPrompt();
     purgeOldCaches();
     registerServiceWorker();
+    state = await loadStateAsync();
+    bootLoaded = true;
     window.addEventListener('pagehide', () => { try{ save(); }catch(e){} });
+    window.addEventListener('beforeunload', () => { try{ save(); }catch(e){} });
     window.addEventListener('storage', e => { if(e.key === LS_KEY || e.key === BACKUP_KEY){ state = loadState(); renderGlobals(); } });
     renderGlobals();
     save();
@@ -296,8 +415,11 @@
     const charms = ['Charm | Hot Hands','Charm | Baby Karat T','Charm | Lil Squirt','Charm | Chicken Lil'].map((n,i)=>({id:'offline-charm-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:180+i*190,weight:18-i*3,image:svgSkin(n,'#22c55e','#f97316'),category:'keychain'}));
     const patches = ['Patch | Metal Gold Nova','Patch | Bravo','Patch | Bayonet Frog','Patch | Phoenix'].map((n,i)=>({id:'offline-patch-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:110+i*160,weight:18-i*3,image:svgSkin(n,'#94a3b8','#ef4444'),category:'patch'}));
     const items = [...fallbackItems, ...stickers, ...agents, ...charms, ...patches];
-    const base = fallbackCases.map((c,i)=>withHiddenOdds(Object.assign({}, c, {items:c.items.map(applySteamLikePrice), price:Math.round(c.price*1.12), profitOdds:.42 + (i%4)*.08}),i));
+    const base = fallbackCases.map((c,i)=>{ const pricedItems = c.items.map(applySteamLikePrice); return withHiddenOdds(Object.assign({}, c, {items:pricedItems, price:calcPrice(pricedItems,i,'case'), profitOdds:.42 + (i%4)*.08}),i); });
     return {items, cases:[...base,
+      createSpecialCase('budget-random','Budget Random Case','Mil-Spec Grade',items.filter(x=>x.value<=450),85,'Очень дешёвый рандомный пул.'),
+      createSpecialCase('profit-hunter','Profit Hunter Case','Classified',items.filter(x=>x.value>=300&&x.value<=5000),780,'Скрыто более щедрый профиль окупа.'),
+      createSpecialCase('highroller-red','High Roller Red Case','Covert',items.filter(x=>x.value>=900),2800,'Дорогой рискованный пул.'),
       createSpecialCase('quality-covert','Red Covert Case','Covert',items.filter(x=>x.rarity==='Covert'),2600,'Кейс с красными Covert-скинами.'),
       createSpecialCase('quality-classified','Pink Classified Case','Classified',items.filter(x=>x.rarity==='Classified'),1500,'Кейс с Classified-скинами.'),
       createSpecialCase('quality-restricted','Purple Restricted Case','Restricted',items.filter(x=>x.rarity==='Restricted'),850,'Кейс с Restricted-скинами.'),
@@ -373,6 +495,11 @@
     const items = itemList().length > 30 ? itemList() : fallbackItems;
 
     const add = c => { if(c && c.items && c.items.length >= 2) cases.push(withHiddenOdds(c, cases.length)); };
+    add(createSpecialCase('budget-random','Budget Random Case','Mil-Spec Grade',items.filter(i=>toNum(i.value,0) <= 450),85,'Очень дешёвый микс: чаще низкая цена, иногда окуп.'));
+    add(createSpecialCase('budget-green','Cheap Green Case','High Grade',items.filter(i=>toNum(i.value,0) <= 650 && ['High Grade','Base Grade','Industrial Grade','Mil-Spec Grade'].includes(i.rarity)),120,'Дешёвый зелёный/синий пул.'));
+    add(createSpecialCase('mid-risk','Risky Mid Case','Restricted',items.filter(i=>toNum(i.value,0) >= 180 && toNum(i.value,0) <= 2600),520,'Средний риск: может дать плюс, но часто минус.'));
+    add(createSpecialCase('profit-hunter','Profit Hunter Case','Classified',items.filter(i=>toNum(i.value,0) >= 300 && toNum(i.value,0) <= 5000),780,'Скрыто более щедрый профиль окупа.'));
+    add(createSpecialCase('highroller-red','High Roller Red Case','Covert',items.filter(i=>toNum(i.value,0) >= 900),2800,'Дорогой рискованный пул с большими перепадами.'));
     add(createSpecialCase('quality-consumer','Grey / Consumer Case','Consumer Grade',items.filter(i=>['Consumer Grade','Base Grade'].includes(i.rarity)),120,'Низкая редкость / серый пул.'));
     add(createSpecialCase('quality-industrial','Light Blue Industrial Case','Industrial Grade',items.filter(i=>i.rarity === 'Industrial Grade'),220,'Industrial Grade пул.'));
     add(createSpecialCase('quality-green','Green High Grade / Charms Case','High Grade',items.filter(i=>['High Grade','Base Grade'].includes(i.rarity) || /charm|keychain|sticker/i.test(i.category || i.name)),310,'Зелёный пул: High Grade, брелоки и недорогие наклейки.'));
@@ -408,18 +535,32 @@
     const low = words.map(w=>String(w).toLowerCase());
     return items.filter(i => low.some(w => String(i.name).toLowerCase().includes(w)));
   }
+  function thematicCaseImage(name, color){
+    const safe = esc(name).slice(0,16);
+    const c = color || '#ff7a18';
+    const c2 = c === '#22c55e' ? '#064e3b' : c === '#ef4444' ? '#7f1d1d' : c === '#4b69ff' ? '#1e3a8a' : c === '#8b5cf6' ? '#4c1d95' : c === '#ec4899' ? '#831843' : '#111827';
+    const icon = /knife/i.test(name) ? '★' : /glove/i.test(name) ? '✋' : /sticker|capsule|tournament/i.test(name) ? '◆' : /agent/i.test(name) ? '♟' : /charm|keychain/i.test(name) ? '✦' : /patch/i.test(name) ? '⬢' : /green/i.test(name) ? 'GREEN' : /red|covert/i.test(name) ? 'RED' : /blue|mil/i.test(name) ? 'BLUE' : /pink|classified/i.test(name) ? 'PINK' : 'CS2';
+    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v160c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
+  }
   function createSpecialCase(idv,name,rar,pool,price,text){
     pool = (pool || []).filter(Boolean).slice(0,240);
     if(pool.length < 2) return null;
     const items = pool.map(x => Object.assign({}, x, {weight: (rarityWeight[x.rarity] || 8) * (x.value > price ? .6 : 1.2)}));
-    return {id:idv, name, price, image:svgCase(name.replace(/ Case| Capsule| Collection/g,'')), items, source:'Custom Pool', kind:'special', rareText:text};
+    return {id:idv, name, price, image:thematicCaseImage(name, rarityColors[rar] || themeColor({id:idv,name})), items, source:'Custom Pool', kind:'special', rareText:text};
   }
   function withHiddenOdds(c, idx=0){
     const profiles = [
-      {profitOdds:.34,jackpot:.20,cheap:.16},{profitOdds:.42,jackpot:.26,cheap:.10},{profitOdds:.50,jackpot:.33,cheap:.06},{profitOdds:.28,jackpot:.16,cheap:.20},{profitOdds:.58,jackpot:.40,cheap:.03}
+      // Убыточные, нейтральные и более щедрые профили. Пользователю они не показываются.
+      {profitOdds:.16,jackpot:.07,cheap:.55,priceMult:1.18},
+      {profitOdds:.26,jackpot:.12,cheap:.38,priceMult:1.05},
+      {profitOdds:.38,jackpot:.20,cheap:.24,priceMult:1.00},
+      {profitOdds:.52,jackpot:.33,cheap:.14,priceMult:.92},
+      {profitOdds:.74,jackpot:.48,cheap:.08,priceMult:.84},
+      {profitOdds:1.02,jackpot:.72,cheap:.04,priceMult:.78}
     ];
     const p = profiles[Math.abs(idx) % profiles.length];
     c._odds = p;
+    if(!c._priced){ c.price = clamp(Math.round(toNum(c.price,300) * (p.priceMult || 1)), 45, c.kind === 'special' ? 18000 : 9000); c._priced = true; }
     return c;
   }
   function apiItem(raw, category='skin'){
@@ -456,8 +597,8 @@
     if(it.category === 'collectible') usd *= 0.75;
     if(/dragon lore|wild lotus|gungnir|howl|fire serpent|medusa|hydroponic|poseidon|desert hydra/i.test(name)) usd *= 1.8;
     const noise = .72 + stableNoise(name) * .72;
-    const value = Math.max(6, Math.round(usd * LC_PER_USD * noise));
-    return Object.assign({}, it, {value, steamUsd:Math.round(usd*noise*100)/100, weight: it.weight || rarityWeight[it.rarity] || 7});
+    const value = Math.max(5, Math.round(usd * RUB_PER_USD * noise));
+    return Object.assign({}, it, {value, steamUsd:Math.round(usd*noise*100)/100, steamRub:value, currency:CURRENCY, priceVersion:PRICE_VERSION, weight: it.weight || rarityWeight[it.rarity] || 7});
   }
   function knownSteamUSD(lower){
     const m = [
@@ -475,8 +616,10 @@
   function calcPrice(items, idx, kind='case'){
     if(!items.length) return 300;
     const avg = weightedAverageValue(items);
-    const mult = kind === 'collection' ? .58 : kind === 'special' ? .72 : .64;
-    return clamp(Math.round(avg*mult + 180 + idx*11), 120, kind === 'special' ? 13000 : 4800);
+    const mult = kind === 'collection' ? .44 : kind === 'special' ? .66 : .50;
+    const spread = [55, 90, 140, 220, 360, 650, 1100, 1900, 3200][idx % 9];
+    const raw = avg * mult + spread + idx * 7;
+    return clamp(Math.round(raw), kind === 'special' ? 900 : 45, kind === 'special' ? 18000 : 9000);
   }
   function weightedAverageValue(items){
     const sumW = items.reduce((s,x)=>s+(rarityWeight[x.rarity]||x.weight||6),0) || 1;
@@ -495,8 +638,13 @@
       if(btn.dataset.upgradeItem){ state.pendingUpgrade = btn.dataset.upgradeItem; save(); location.href = 'upgrade.html'; return; }
       if(btn.dataset.contractItem){ toggleContract(btn.dataset.contractItem); route(); toast('Выбор контракта обновлён','good'); return; }
       const a = btn.dataset.action;
-      if(a === 'spin-current-case') return spinCase(currentCase);
-      if(a === 'open-again') return spinCase(currentCase);
+      if(a === 'spin-current-case') return spinCase(currentCase, {fast:false,count:1});
+      if(a === 'spin-fast') return spinCase(currentCase, {fast:true,count:1});
+      if(a === 'open-again') return spinCase(currentCase, {fast:false,count:1});
+      if(a === 'open-again-fast') return spinCase(currentCase, {fast:true,count:1});
+      if(a === 'open-multi') return spinCase(currentCase, {fast:true,count:btn.dataset.count||1});
+      if(a === 'sell-batch') return sellBatch((btn.dataset.uids||'').split(',').filter(Boolean));
+      if(a === 'redeem-promo') return redeemPromo();
       if(a === 'spin-wheel') return spinWheel();
       if(a === 'start-ad') return startAd();
       if(a === 'start-battle') return startBattle();
@@ -520,11 +668,11 @@
       if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value; save(); renderUpgrade(); }
       if(e.target.id === 'battleCase' || e.target.id === 'battleMode') renderBattleInfo();
     });
-    document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); if(e.key === 'Enter' && e.target && e.target.id === 'promoInput') redeemPromo(); });
   }
 
   function route(){
-    state = loadState();
+    state = bootLoaded ? bestState([state, loadState(false)]) : loadState();
     renderGlobals();
     setActiveNav();
     const page = document.body.dataset.page || 'home';
@@ -536,6 +684,7 @@
     if(page === 'wheel') return renderWheel();
     if(page === 'battle') return renderBattle();
     if(page === 'ads') return renderAds();
+    if(page === 'promos') return renderPromos();
     if(page === 'profile') return renderProfile();
     if(page === 'install') return renderInstall();
   }
@@ -608,12 +757,12 @@
   }
   function caseCard(c){
     const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
-    return `<article class="case-card" style="--theme:${themeColor(c)}"><span class="case-kind">${esc(kindLabel)}</span>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
+    return `<article class="case-card" style="--theme:${themeColor(c)}"><span class="case-kind">${esc(kindLabel)}</span><span class="price-tier">${c.price<750?'дешёвый':c.price>6500?'дорогой':'средний'}</span>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
   }
   function renderHome(){
     const root = $('#homeRoot'); if(!root) return;
     const top = [...catalog.items].sort((a,b)=>b.value-a.value).slice(0,8);
-    root.innerHTML = `${statCards()}<section class="block"><div class="head"><div><h2>Популярные кейсы</h2><p>Кнопка «Крутить» сразу открывает модальное окно, списывает баланс и запускает рулетку.</p></div><a class="btn primary" href="cases.html">Все кейсы</a></div><div class="grid case-grid">${catalog.cases.slice(0,6).map(caseCard).join('')}</div></section><section class="block"><div class="head"><div><h2>Редкие дропы</h2><p>Скины из текущего пула CS2.</p></div><a class="btn" href="ads.html">Получить LC</a></div><div class="grid item-grid">${top.map(x=>itemCard(x,{badge:'топ'})).join('')}</div></section>`;
+    root.innerHTML = `${statCards()}<section class="block"><div class="head"><div><h2>Популярные кейсы</h2><p>Кнопка «Крутить» сразу открывает модальное окно, списывает баланс и запускает рулетку.</p></div><a class="btn primary" href="cases.html">Все кейсы</a></div><div class="grid case-grid">${catalog.cases.slice(0,6).map(caseCard).join('')}</div></section><section class="block"><div class="head"><div><h2>Редкие дропы</h2><p>Скины из текущего пула CS2.</p></div><a class="btn" href="ads.html">Получить ₽LC</a></div><div class="grid item-grid">${top.map(x=>itemCard(x,{badge:'топ'})).join('')}</div></section>`;
   }
   function renderCases(){
     const root = $('#casesRoot'); if(!root) return;
@@ -634,7 +783,7 @@
     currentCase = c.id;
     $('#caseModalTitle').textContent = c.name;
     const content = [...c.items].sort((a,b)=>(rarityValue[a.rarity]||0)-(rarityValue[b.rarity]||0)).map(x=>caseContentCard(x)).join('');
-    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside">${caseVisual(c,true)}<div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть за ${fmt(c.price)}</button><button class="btn" data-action="add-debug-coins">+10 000 LC для теста</button><p class="small">Стрелка по центру показывает предмет, который выпадет после остановки.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
+    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside">${caseVisual(c,true)}<div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть 1x за ${fmt(c.price)}</button><button class="btn blue huge" data-action="spin-fast">Открыть быстро 1x</button><div class="multi-open-row"><button class="small-btn" data-action="open-multi" data-count="3">Быстро x3 · ${fmt(c.price*3)}</button><button class="small-btn" data-action="open-multi" data-count="5">Быстро x5 · ${fmt(c.price*5)}</button><button class="small-btn" data-action="open-multi" data-count="10">Быстро x10 · ${fmt(c.price*10)}</button></div><button class="btn" data-action="add-debug-coins">+10 000 ₽LC для теста</button><p class="small">Стрелка по центру показывает предмет при обычном прокруте. Быстрое открытие пропускает анимацию и сразу начисляет дроп.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
     openModal('#caseModal');
     if(autoSpin) setTimeout(() => spinCase(c.id), 120);
   }
@@ -646,7 +795,7 @@
     const pool = c && c.items && c.items.length ? c.items : fallbackItems;
     const weights = pool.map(it => hiddenCaseWeight(it,c));
     const total = weights.reduce((s,x)=>s+x,0) || 1;
-    let r = Math.random() * total;
+    let r = cryptoRandom() * total;
     for(let i=0;i<pool.length;i++){ r -= weights[i]; if(r <= 0) return pool[i]; }
     return pool[pool.length-1];
   }
@@ -656,22 +805,43 @@
     const ratio = toNum(it.value,0) / price;
     const odds = (c && c._odds) || {profitOdds:.42,jackpot:.25,cheap:.1};
     if(ratio >= 1) w *= odds.profitOdds;
+    if(ratio >= 1.35) w *= (odds.profitOdds * 0.9);
     if(ratio >= 2.2) w *= odds.jackpot;
-    if(ratio < .45) w *= (1 + odds.cheap);
-    if(c && c.kind === 'special') w *= ratio >= 1 ? 0.82 : 1.08;
+    if(ratio < .55) w *= (1 + odds.cheap);
+    if(ratio < .25) w *= (1 + odds.cheap * 0.8);
+    if(c && c.kind === 'special') w *= ratio >= 1 ? 0.76 : 1.12;
+    // микрошум на каждый ролл делает кейсы менее предсказуемыми, но сохраняет профиль окупа
+    w *= rnd(.86, 1.18);
     return w;
   }
-  function spinCase(caseId){
+  function spinCase(caseId, opts={}){
     if(busy.case) return toast('Рулетка уже крутится','warn');
     const c = catalog.cases.find(x => x.id === caseId);
     if(!c) return toast('Кейс не найден','bad');
-    if(!spend(c.price, `Открытие ${c.name}`)) return;
-    state.opened += 1; save();
+    const fast = !!(opts && opts.fast);
+    const count = clamp(Math.round(toNum(opts && opts.count, 1)), 1, 25);
+    const totalCost = Math.max(1, Math.round(toNum(c.price,0) * count));
+    if(!spend(totalCost, count > 1 ? `Открытие ${c.name} x${count}` : `Открытие ${c.name}`)) return;
+    state.opened += count;
+    save();
     busy.case = true;
-    const btn = $('[data-action="spin-current-case"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
+    const buttons = $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]');
+    buttons.forEach(b => b.disabled = true);
+    const mainBtn = $('[data-action="spin-current-case"]'); if(mainBtn) mainBtn.textContent = fast || count > 1 ? 'Открываю...' : 'Крутится...';
+
+    if(fast || count > 1){
+      const drops = Array.from({length:count}, () => addItem(weighted(c), c.name));
+      drops.forEach(d => addLive('Ты', d));
+      busy.case = false;
+      buttons.forEach(b => b.disabled = false);
+      if(mainBtn) mainBtn.textContent = `Открыть 1x за ${fmt(c.price)}`;
+      if(count === 1) showDrop(drops[0], c); else showBatchDrop(drops, c, totalCost);
+      return;
+    }
+
     const strip = $('#rouletteStrip'); const box = strip && strip.closest('.roulette-box');
     const win = weighted(c); const winIndex = 41;
-    if(!strip || !box){ finishDrop(win,c,btn); return; }
+    if(!strip || !box){ finishDrop(win,c,mainBtn); return; }
     const cards = Array.from({length:62},(_,i)=> i===winIndex ? win : weighted(c));
     strip.style.transition='none'; strip.style.transform='translateX(0px)'; strip.innerHTML = cards.map(rollCard).join('');
     strip.getBoundingClientRect();
@@ -681,22 +851,43 @@
       strip.style.transition='transform 4.6s cubic-bezier(.08,.75,.08,1)';
       strip.style.transform=`translateX(-${target}px)`;
     });
-    setTimeout(() => finishDrop(win,c,btn), 4850);
+    setTimeout(() => finishDrop(win,c,mainBtn), 4850);
   }
   function finishDrop(win,c,btn){
     const inv = addItem(win, c.name);
     addLive('Ты', inv);
     busy.case = false;
-    if(btn){ btn.disabled=false; btn.textContent=`Открыть ещё за ${fmt(c.price)}`; }
+    $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]').forEach(b => b.disabled=false);
+    if(btn){ btn.disabled=false; btn.textContent=`Открыть 1x за ${fmt(c.price)}`; }
     showDrop(inv, c);
   }
   function showDrop(it,c){
-    $('#dropModalBody').innerHTML = `<div class="drop-box"><p class="kicker">Выпал предмет</p><img class="drop-img" src="${esc(it.image)}" onerror="this.src='${svgSkin(it.name)}'"><h2 style="color:${it.rarityColor||'#fff'}">${esc(it.displayName||it.name)}</h2><p>${esc(it.rarity)} · ${esc(it.wear||'')} · float ${esc(it.float||'')}</p><h3>${fmt(it.value)}</h3><div class="drop-actions"><button class="btn green" data-sell="${esc(it.uid)}">Продать за ${fmt(it.value)}</button><button class="btn" data-close-modal>Оставить</button><button class="btn blue" data-upgrade-item="${esc(it.uid)}">В апгрейд</button><button class="btn" data-contract-item="${esc(it.uid)}">В контракт</button>${c?`<button class="btn primary" data-action="open-again">Открыть ещё</button>`:''}</div></div>`;
+    $('#dropModalBody').innerHTML = `<div class="drop-box"><p class="kicker">Выпал предмет</p><img class="drop-img" src="${esc(it.image)}" onerror="this.src='${svgSkin(it.name)}'"><h2 style="color:${it.rarityColor||'#fff'}">${esc(it.displayName||it.name)}</h2><p>${esc(it.rarity)} · ${esc(it.wear||'')} · float ${esc(it.float||'')}</p><h3>${fmt(it.value)}</h3><div class="drop-actions"><button class="btn green" data-sell="${esc(it.uid)}">Продать за ${fmt(it.value)}</button><button class="btn" data-close-modal>Оставить</button><button class="btn blue" data-upgrade-item="${esc(it.uid)}">В апгрейд</button><button class="btn" data-contract-item="${esc(it.uid)}">В контракт</button>${c?`<button class="btn primary" data-action="open-again">Открыть ещё</button><button class="btn blue" data-action="open-again-fast">Быстро ещё</button>`:''}</div></div>`;
     openModal('#dropModal');
   }
 
+  function showBatchDrop(items,c,totalCost){
+    items = Array.isArray(items) ? items.filter(Boolean) : [];
+    const totalValue = items.reduce((sum,it)=>sum + toNum(it.value,0),0);
+    const profit = Math.round(totalValue - toNum(totalCost,0));
+    const uids = items.map(x=>x.uid).join(',');
+    $('#dropModalBody').innerHTML = `<div class="drop-box batch-drop"><p class="kicker">Массовое открытие</p><h2>${esc(c && c.name ? c.name : 'Кейс')} · x${items.length}</h2><div class="batch-summary"><span>Потрачено: <b>${fmt(totalCost)}</b></span><span>Выпало на: <b>${fmt(totalValue)}</b></span><span class="${profit>=0?'plus':'minus'}">Итог: <b>${profit>=0?'+':''}${fmt(profit)}</b></span></div><div class="batch-grid">${items.map(it=>itemCard(it,{badge:'drop'})).join('')}</div><div class="drop-actions"><button class="btn green" data-action="sell-batch" data-uids="${esc(uids)}">Продать всё за ${fmt(totalValue)}</button><button class="btn" data-close-modal>Оставить всё</button>${c?`<button class="btn primary" data-action="open-multi" data-count="${items.length}">Открыть ещё x${items.length}</button><button class="btn blue" data-action="open-again-fast">Быстро 1x</button>`:''}</div></div>`;
+    openModal('#dropModal');
+  }
+  function sellBatch(uids){
+    const set = new Set(Array.isArray(uids)?uids:[]);
+    const items = state.inventory.filter(x => set.has(x.uid));
+    if(!items.length) return toast('Эти предметы уже проданы или не найдены','bad');
+    const total = items.reduce((s,x)=>s+toNum(x.value,0),0);
+    removeItems(items.map(x=>x.uid));
+    state.sold += Math.round(total);
+    earn(total, `Массовая продажа x${items.length}`);
+    closeModal($('#dropModal'));
+    route();
+  }
+
   function renderInventory(){
-    state = loadState();
+    state = bestState([state, loadState(false)]);
     renderGlobals();
     const root = $('#inventoryRoot'); if(!root) return;
     const controls = $('#inventoryControls');
@@ -705,7 +896,7 @@
     const prevS = $('#invSort') ? $('#invSort').value : 'new';
     const rarities = [...new Set(state.inventory.map(x=>x.rarity).filter(Boolean))].sort((a,b)=>(rarityValue[b]||0)-(rarityValue[a]||0));
     if(controls){
-      controls.innerHTML = `<input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select><button class="small-btn" data-action="sell-cheap">Продать дешевле 200 LC</button>`;
+      controls.innerHTML = `<input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select><button class="small-btn" data-action="sell-cheap">Продать дешевле 200 ₽LC</button>`;
     }
     const q = ($('#invSearch') && $('#invSearch').value || prevQ).toLowerCase().trim();
     const r = $('#invRarity') ? $('#invRarity').value : prevR;
@@ -721,7 +912,7 @@
   }
   function sellCheap(){
     const cheap = state.inventory.filter(x => x.value < 200);
-    if(!cheap.length) return toast('Нет предметов дешевле 200 LC','warn');
+    if(!cheap.length) return toast('Нет предметов дешевле 200 ₽LC','warn');
     const total = cheap.reduce((s,x)=>s+x.value,0);
     removeItems(cheap.map(x=>x.uid));
     state.sold += total;
@@ -741,7 +932,7 @@
   function renderUpgradeTargets(){
     const selected = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
     const q = ($('#targetSearch') && $('#targetSearch').value || '').toLowerCase();
-    let targets = catalog.items.filter(x => !selected || x.value > selected.value * 1.03);
+    let targets = catalog.items.filter(x => !selected || x.value > selected.value * 1.15);
     if(q) targets = targets.filter(x => x.name.toLowerCase().includes(q));
     targets = targets.sort((a,b)=>a.value-b.value).slice(0,60);
     currentTarget = targets[0] || null;
@@ -753,7 +944,12 @@
     }));
     updateUpgradeChance();
   }
-  function chance(src,tgt){ return src && tgt ? clamp((src.value / tgt.value) * 86, 1, 76) : 0; }
+  function chance(src,tgt){
+    if(!src || !tgt) return 0;
+    const ratio = toNum(src.value,0) / Math.max(1, toNum(tgt.value,1));
+    // House-edge upgrade formula: чем дороже цель, тем ниже шанс. Максимум урезан, чтобы апгрейд не превращался в постоянную победу.
+    return clamp(ratio * 67, 0.35, 58);
+  }
   function updateUpgradeChance(){
     const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
     const ch = chance(src,currentTarget);
@@ -770,10 +966,10 @@
     busy.upgrade = true;
     const btn = $('[data-action="do-upgrade"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
     const lane = $('#upgradeLane');
-    const success = Math.random()*100 <= ch;
+    const success = cryptoRandom() < (ch / 100);
     const winStart = 50 - ch/2;
     const winEnd = 50 + ch/2;
-    const stopPercent = success ? rnd(winStart+1, winEnd-1) : (Math.random()<.5 ? rnd(2, Math.max(3,winStart-1)) : rnd(Math.min(97,winEnd+1),98));
+    const stopPercent = success ? rnd(winStart+1, winEnd-1) : (cryptoRandom()<.5 ? rnd(2, Math.max(3,winStart-1)) : rnd(Math.min(97,winEnd+1),98));
     if(lane){
       lane.style.transition='none'; lane.style.transform='translateX(0)'; lane.getBoundingClientRect();
       requestAnimationFrame(()=>{ lane.style.transition='transform 3.6s cubic-bezier(.08,.75,.08,1)'; lane.style.transform=`translateX(calc(-${stopPercent}% + 50%))`; });
@@ -817,7 +1013,7 @@
   function renderWheel(){
     const root = $('#wheelRoot'); if(!root) return;
     const left = cooldownLeft();
-    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel" ${left?'disabled':''}>${left?'Доступно через '+formatTime(left):'Крутить бонусное колесо'}</button><div class="notice">Лимит: 1 прокрутка в 2 часа. После остановки сразу начисляет LC или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
+    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel" ${left?'disabled':''}>${left?'Доступно через '+formatTime(left):'Крутить бонусное колесо'}</button><div class="notice">Лимит: 1 прокрутка в 2 часа. После остановки сразу начисляет ₽LC или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
     if(left) setTimeout(renderWheel, Math.min(left, 1000));
   }
   function spinWheel(){
@@ -828,9 +1024,9 @@
     state.lastWheelAt = Date.now(); save();
     const btn = $('[data-action="spin-wheel"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
     const rewards = [
-      ['+250 LC','coins',250],['+500 LC','coins',500],['+750 LC','coins',750],['+1 000 LC','coins',1000],['+2 500 LC','coins',2500],['Промо +1 500 LC','coins',1500],['Случайный скин','item',0],['Редкий скин','rare',0]
+      ['+250 ₽LC','coins',250],['+500 ₽LC','coins',500],['+750 ₽LC','coins',750],['+1 000 ₽LC','coins',1000],['+2 500 ₽LC','coins',2500],['Промо +1 500 ₽LC','coins',1500],['Случайный скин','item',0],['Редкий скин','rare',0]
     ];
-    const idx = Math.floor(Math.random()*rewards.length);
+    const idx = Math.floor(cryptoRandom()*rewards.length);
     wheelDeg += 360*6 + (360 - idx*45) + rnd(8,35);
     const wh = $('#wheel'); if(wh) wh.style.transform = `rotate(${wheelDeg}deg)`;
     setTimeout(()=>{
@@ -862,7 +1058,7 @@
     busy.ad = true;
     const modal = document.createElement('div');
     modal.className = 'modal show ad-lock-modal'; modal.dataset.locked = '1';
-    modal.innerHTML = `<div class="modal-card ad-watch"><div class="modal-head"><h3>Реклама проекта</h3><button class="close" data-close-modal title="Закроется после таймера">×</button></div><div class="modal-body"><div class="ad-card"><div><span class="kicker">Просмотр ${AD_REWARD} LC</span><h2 id="adLockTitle">Осталось 10 секунд</h2><p>Закрытие заблокировано до конца просмотра.</p><div class="progress"><span id="adProgress"></span></div><p id="adTimer">10 сек.</p></div><div class="project-grid">${projectCards()}</div></div></div></div>`;
+    modal.innerHTML = `<div class="modal-card ad-watch"><div class="modal-head"><h3>Реклама проекта</h3><button class="close" data-close-modal title="Закроется после таймера">×</button></div><div class="modal-body"><div class="ad-card"><div><span class="kicker">Просмотр ${fmt(AD_REWARD)}</span><h2 id="adLockTitle">Осталось 10 секунд</h2><p>Закрытие заблокировано до конца просмотра.</p><div class="progress"><span id="adProgress"></span></div><p id="adTimer">10 сек.</p></div><div class="project-grid">${projectCards()}</div></div></div></div>`;
     document.body.appendChild(modal);
     const bar = $('#adProgress', modal); const timer = $('#adTimer', modal); const title = $('#adLockTitle', modal);
     let sec = 10; if(bar) bar.style.width='0%';
@@ -956,15 +1152,37 @@
     }, 4300);
   }
 
+  function isIOSDevice(){
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+  function isStandaloneMode(){
+    return !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+  }
+  function initIOSViewport(){
+    const html = document.documentElement;
+    const setVh = () => {
+      try{ html.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px'); }catch(e){}
+    };
+    setVh();
+    window.addEventListener('resize', setVh, {passive:true});
+    window.addEventListener('orientationchange', () => setTimeout(setVh, 250), {passive:true});
+    document.addEventListener('visibilitychange', setVh, {passive:true});
+    if(isIOSDevice()) html.classList.add('ios');
+    if(isStandaloneMode()) html.classList.add('standalone');
+    try{ document.addEventListener('touchstart', function(){}, {passive:true}); }catch(e){}
+  }
+
   let deferredInstallPrompt = null;
   function initInstallPrompt(){
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $$('.js-install-ready').forEach(x=>x.textContent='Готово к установке'); });
   }
   function registerServiceWorker(){
-    // V9 intentionally unregisters old service workers: previous builds cached stale JS/HTML and broke balance/inventory.
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
-    }
+    // v11: safe network-first/no-cache SW only for installability and iOS/Android standalone mode.
+    // It does NOT cache app.js/html, so GitHub Pages updates do not break balance/inventory.
+    if(!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    navigator.serviceWorker.register('./sw.js?v=' + VERSION, {updateViaCache:'none'}).then(reg => {
+      try{ reg.update(); }catch(e){}
+    }).catch(()=>{});
   }
   async function installPWA(){
     if(deferredInstallPrompt){
@@ -978,33 +1196,59 @@
   function showIOSGuide(){
     let modal = $('#iosGuideModal');
     if(!modal){
-      document.body.insertAdjacentHTML('beforeend', `<div class="modal" id="iosGuideModal"><div class="modal-card"><div class="modal-head"><h3>Как добавить на экран iPhone</h3><button class="close" data-close-modal>×</button></div><div class="modal-body"><div class="panel"><ol class="steps"><li>Открой сайт в Safari.</li><li>Нажми кнопку «Поделиться».</li><li>Выбери «На экран Домой».</li><li>Подтверди название CS2 Case Lab.</li></ol><p>После этого сайт будет открываться как обычная иконка приложения.</p></div></div></div></div>`);
+      document.body.insertAdjacentHTML('beforeend', `<div class="modal" id="iosGuideModal"><div class="modal-card"><div class="modal-head"><h3>Как добавить на экран iPhone</h3><button class="close" data-close-modal>×</button></div><div class="modal-body"><div class="panel"><ol class="steps"><li>Открой сайт именно в <b>Safari</b>, не во встроенном браузере мессенджера.</li><li>Нажми кнопку <b>«Поделиться»</b> ⬆︎ внизу Safari.</li><li>Прокрути меню и выбери <b>«На экран Домой»</b>.</li><li>Нажми <b>«Добавить»</b>. Иконка появится как обычное приложение.</li><li>После первого запуска из иконки зайди в <b>Профиль</b> и проверь статус сохранения.</li></ol><p>В standalone-режиме iOS сайт использует safe-area: элементы не залезают под Dynamic Island/чёлку и нижнюю домашнюю полоску.</p></div></div></div></div>`);
       modal = $('#iosGuideModal');
     }
     openModal(modal);
   }
   function renderInstall(){
     const root = $('#installRoot'); if(!root) return;
-    root.innerHTML = `<div class="grid cards-3"><article class="panel"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel"><span class="kicker">iPhone / iPad</span><h2>Иконка на главный экран</h2><p>Для iOS установка идёт через Safari, без exe и без App Store.</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button></article><article class="panel"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block"><b>Важно:</b> реальный лимит «10 реклам на IP» невозможен в чистом GitHub Pages без бэкенда. В этой версии лимит реализован для браузера/устройства через localStorage; для IP-лимита нужен сервер или Cloudflare Worker.</div>`;
+    const ios = isIOSDevice();
+    const standalone = isStandaloneMode();
+    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v11:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
+  }
+
+  function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
+  function renderPromos(){
+    const root = $('#promosRoot'); if(!root) return;
+    const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
+    const totalCodes = Object.keys(PROMO_CODES).length;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME13</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article><article class="panel"><h3>Для владельца проекта</h3><p>Список кодов находится в <code>app.js</code> в объекте <b>PROMO_CODES</b>. На GitHub Pages это локальная система без сервера: лимит действует на save пользователя.</p><p class="small">Для настоящих закрытых/одноразовых кодов на всех пользователей нужен backend.</p></article></div>`;
+  }
+  function redeemPromo(){
+    const input = $('#promoInput');
+    const code = normalizePromoCode(input && input.value);
+    if(!code) return toast('Введи промокод','bad');
+    const amount = PROMO_CODES[code];
+    if(!amount) return toast('Промокод не найден','bad');
+    state.usedPromos = Array.isArray(state.usedPromos) ? state.usedPromos : [];
+    if(state.usedPromos.includes(code)) return toast('Этот промокод уже активирован','warn');
+    state.usedPromos.push(code);
+    earn(amount, `Промокод ${code}`);
+    if(input) input.value = '';
+    renderPromos();
   }
 
   function storageStatusText(){
-    try{
-      const test = '__cs2_case_lab_test__'; localStorage.setItem(test,'1'); localStorage.removeItem(test);
-      const raw = localStorage.getItem(LS_KEY) || '';
-      return `<span class="plus">localStorage работает</span><br><small>Размер save: ${Math.round(raw.length/1024)} KB · ключ: ${LS_KEY}</small>`;
-    }catch(e){
-      return `<span class="minus">localStorage заблокирован</span><br><small>Прогресс будет держаться только в этой вкладке через sessionStorage.</small>`;
-    }
+    let localOk = false, sessionOk = false, idbOk = !!storageHealth.indexedDB, winOk = !!storageHealth.windowName;
+    try{ const test = '__cs2_case_lab_test__'; localStorage.setItem(test,'1'); localStorage.removeItem(test); localOk = true; }catch(e){ localOk = false; }
+    try{ const test = '__cs2_case_lab_session_test__'; sessionStorage.setItem(test,'1'); sessionStorage.removeItem(test); sessionOk = true; }catch(e){ sessionOk = false; }
+    const rawLen = (()=>{ try{ return (localStorage.getItem(LS_KEY)||'').length; }catch(e){ return JSON.stringify(compactState(state)).length; } })();
+    if(localOk) return `<span class="plus">localStorage работает</span><br><small>Постоянный save активен · ${Math.round(rawLen/1024)} KB · ключ: ${LS_KEY}</small>`;
+    if(idbOk) return `<span class="plus">Сохранение работает через IndexedDB</span><br><small>localStorage недоступен или не используется, но постоянный save активен через IndexedDB. Баланс и инвентарь должны сохраняться.</small>`;
+    if(sessionOk || winOk) return `<span class="minus">Постоянное сохранение ограничено</span><br><small>Сайт использует sessionStorage/window.name. Прогресс держится в текущей вкладке; экспортируй save перед закрытием.</small>`;
+    return `<span class="minus">Все хранилища заблокированы</span><br><small>Проверь private mode, расширения и настройки site data. Пока прогресс только в памяти страницы.</small>`;
   }
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 LC. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 ₽LC. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 ₽LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
-    if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 LC?')) return;
+    if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 ₽LC?')) return;
     try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); localStorage.removeItem(LS_KEY); }catch(e){}
     try{ sessionStorage.removeItem(BACKUP_KEY); }catch(e){}
+    try{ if(String(window.name||'').startsWith(WINDOW_SAVE_PREFIX)) window.name=''; }catch(e){}
+    idbDelete();
     state = defaultState(); save(); toast('Прогресс сброшен','good'); route();
   }
   function exportSave(){ const box=$('#saveBox'); if(box) box.value = btoa(unescape(encodeURIComponent(JSON.stringify(compactState(state))))); toast('Save выгружен в поле','good'); }
