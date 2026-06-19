@@ -49,3 +49,17 @@
 
 ## v31.13
 Добавлены XP/уровни, титулы, динамический маркет, инвестиции, сезонные ивенты, расширенный battle, Case Creator, миссии коллекционера, комиссии, графики профиля, редкие события, сезонный магазин, кастомизация профиля, избранное/защита, улучшенный сапёр и новые типы промокодов.
+
+
+## v31.14
+- Fixed theme coverage for Battle-pass, Season pass, Развитие, профиль, маркет, крафт, статистика, сапёр and dynamic cards.
+- Added extra promo codes with balance, XP, ST, item, sticker, patch and profile rewards.
+
+
+## v31.15
+- Major sticker album with collectible slots and rewards.
+- Daily shop with countdown to midnight.
+- Auto-sell cheap drops with configurable threshold.
+- Protected items filtered out from upgrade, contracts and mines.
+- Prestige system after account level 100.
+- Extra promo codes in app.js via V315_PROMOS.

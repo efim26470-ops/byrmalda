@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.13.0';
+  const VERSION = '31.15.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -84,12 +84,21 @@
     WORLDCUP26: 9000, FEMSTART: 6500, MOBILELAB: 5500, PROJECTPROD: 7000, ADCLICK: 3500, VIEWBONUS: 2500, SKINSTART: 4500, CASEBOOST: 6000,
     DRAGONHEAT: 12000, SEASON30: 8000, MINESLUCK: 5000, UPGRADE2X: 3000, UPGRADE10X: 10000, CONTRACTPLUS: 4200, BATTLEARENA: 7500, THEMEPACK: 2800,
     VITALITYWIN: 6000, NAVINATION: 6000, FAZEUP: 6000, SPIRITDROP: 6000, CLOUDLUCK: 4000, FNATICOLD: 4000, FALCONSPEED: 4000, PARIVISION: 4000, VPPOWER: 4000, NINEZBOOST: 4000,
-    GUNGNIRDREAM: 18000, KATOWICE14: 14000, PATCHDROP: 2500, STICKERHUNT: 5000, AGENTMODE: 4500, DAILY2026: 2600
+    GUNGNIRDREAM: 18000, KATOWICE14: 14000, PATCHDROP: 2500, STICKERHUNT: 5000, AGENTMODE: 4500, DAILY2026: 2600,
+    XPSTART: 3500, MARKETKING: 6200, INVESTPLUS: 7200, RAREEVENT: 8800, SEASONCOIN: 5400, CREATORLAB: 7600, PROFILEUP: 4300, MINESSAFE: 5200,
+    CRAZYBATTLE: 9300, UNDERDOG: 6400, GOLDENTICKET: 11000, DAILYMISSION: 3900, COLLECTIONRUN: 5800, TRADETAX: 4700, LIGHTTHEME: 2200, DARKTHEME: 2200,
+    CASEMAKER: 8300, SHOPPINGDAY: 5100, XPBOOSTER: 6900, TOKENHUNT: 6100
   });
 
   const PROMO_REWARDS = Object.freeze({
     LEVELUP:{type:'xp', amount:650, label:'650 XP'}, CASETOKEN:{type:'tokens', amount:25, label:'25 сезонных жетонов'}, RANDOMSKIN:{type:'item', min:500, max:9000, label:'случайный скин'}, STICKERBOX:{type:'category', category:'sticker', min:300, max:8000, label:'случайная наклейка'}, PATCHBOX:{type:'category', category:'patch', min:250, max:6000, label:'случайный патч'}, BATTLEFREE:{type:'balance', amount:11000, label:'11 000 ₽'}, MARKETDAY:{type:'tokens', amount:40, label:'40 ST'}, DRAGONLUCK:{type:'item', min:5000, max:45000, label:'сильный предмет'}, AVATARPACK:{type:'profile', amount:1, label:'набор профиля'}, EVENTBOOST:{type:'xp_tokens', xp:350, tokens:20, label:'350 XP + 20 ST'},
-    RANKBOOST:{type:'xp', amount:1200, label:'1200 XP'}, SEASONSHOP:{type:'tokens', amount:60, label:'60 ST'}, CASECREATOR:{type:'balance', amount:12500, label:'12 500 ₽'}, INVESTOR:{type:'balance', amount:9000, label:'9 000 ₽'}, COLLECTOR:{type:'category', category:'sticker', min:700, max:12000, label:'коллекционный предмет'}
+    RANKBOOST:{type:'xp', amount:1200, label:'1200 XP'}, SEASONSHOP:{type:'tokens', amount:60, label:'60 ST'}, CASECREATOR:{type:'balance', amount:12500, label:'12 500 ₽'}, INVESTOR:{type:'balance', amount:9000, label:'9 000 ₽'}, COLLECTOR:{type:'category', category:'sticker', min:700, max:12000, label:'коллекционный предмет'},
+    LEVEL25:{type:'xp', amount:2500, label:'2500 XP'}, ST100:{type:'tokens', amount:100, label:'100 ST'}, HIGHSKIN:{type:'item', min:12000, max:65000, label:'дорогой скин'},
+    HOLODROP:{type:'category', category:'sticker', min:1200, max:25000, label:'holo/gold наклейка'}, PATCHKING:{type:'category', category:'patch', min:500, max:12000, label:'патч'},
+    PROFILEBOX:{type:'profile', amount:1, label:'косметика профиля'}, EVENTPASS:{type:'xp_tokens', xp:800, tokens:80, label:'800 XP + 80 ST'},
+    MAJORPACK:{type:'category', category:'sticker', min:2500, max:35000, label:'major item'}, KNIFECHASE:{type:'item', min:18000, max:95000, label:'премиум предмет'},
+    STARTERPLUS:{type:'xp_tokens', xp:450, tokens:35, label:'450 XP + 35 ST'}, COLLECTORBOX:{type:'category', category:'sticker', min:800, max:16000, label:'collector drop'},
+    MINEBOOST:{type:'xp', amount:900, label:'900 XP'}, MARKETBOOST:{type:'tokens', amount:55, label:'55 ST'}, DRAGONPACK:{type:'item', min:25000, max:120000, label:'dragon-tier item'}
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -565,6 +574,8 @@
     state.inventory.unshift(item);
     state.inventory = state.inventory.slice(0,600);
     addXP(8 + Math.min(60, Math.round(value / 5000)), `Предмет: ${item.displayName||item.name}`);
+    if(typeof checkMajorAlbumPickup === 'function') checkMajorAlbumPickup(item);
+    if(typeof maybeAutoSellDrop === 'function') maybeAutoSellDrop(item, source);
     save();
     return item;
   }
@@ -1213,6 +1224,7 @@
   function applyTheme(id, persist=false){
     const theme = getTheme(id);
     document.documentElement.dataset.theme = theme.id;
+    if(document.body) document.body.dataset.theme = theme.id;
     document.documentElement.style.colorScheme = theme.id === 'light' ? 'light' : 'dark';
     const meta = document.querySelector('meta[name="theme-color"]');
     if(meta){
@@ -1615,7 +1627,7 @@
     const sel = $('#upgradeSource');
     const uid = sel ? sel.value : (state.pendingUpgrade || '');
     if(!uid || uid === '__BALANCE__') return null;
-    return state.inventory.find(x=>x.uid===uid) || null;
+    return state.inventory.find(x=>x.uid===uid && !x.protected) || null;
   }
   function upgradeBalanceAmount(){
     const el = $('#upgradeBalanceAmount');
@@ -1641,8 +1653,9 @@
   function renderUpgrade(){
     const root = $('#upgradeRoot'); if(!root) return;
     upgradeMode = upgradeTargetMultiplier();
-    const inv = [...state.inventory].sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
+    const inv = [...state.inventory].filter(x=>!x.protected).sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
     const selected = state.pendingUpgrade ? inv.find(x=>x.uid===state.pendingUpgrade) : null;
+    if(state.pendingUpgrade && !selected){ state.pendingUpgrade = null; save(); }
     const sourceValue = selected ? selected.uid : '__BALANCE__';
     const balanceDefault = selected ? 0 : Math.min(Math.round(toNum(state.balance,0)), 1000);
     const options = `<option value="__BALANCE__" ${!selected?'selected':''}>Баланс без скина</option>` + inv.map(x=>`<option value="${esc(x.uid)}" ${sourceValue===x.uid?'selected':''}>${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
@@ -1719,6 +1732,8 @@
   }
 
   function toggleContract(uid){
+    const srcIt = state.inventory.find(x=>x.uid===uid);
+    if(srcIt && srcIt.protected) return toast('Защищённые предметы нельзя использовать в режимах. Сними замок в инвентаре.','bad');
     const set = new Set(state.contractSelected||[]);
     if(set.has(uid)) set.delete(uid); else if(set.size < 10) set.add(uid); else return toast('В контракт можно максимум 10 предметов','bad');
     state.contractSelected = Array.from(set); save();
@@ -1726,13 +1741,13 @@
   function renderContracts(){
     const root = $('#contractsRoot'); if(!root) return;
     const set = new Set(state.contractSelected||[]);
-    const selected = state.inventory.filter(x=>set.has(x.uid));
+    const selected = state.inventory.filter(x=>set.has(x.uid) && !x.protected);
     const total = selected.reduce((s,x)=>s+x.value,0);
-    root.innerHTML = `<div class="contract-layout"><aside class="panel"><h3>Контракт</h3><div class="big-count">${selected.length}/10</div><p>Минимум 3 предмета.</p><p>Сумма: <b>${fmt(total)}</b></p><p>Примерный результат: <b>${fmt(total*rnd(1.05,1.85))}</b></p><button class="btn primary huge" data-action="make-contract" ${selected.length>=3?'':'disabled'}>Создать контракт</button><button class="btn" data-action="clear-contract">Очистить</button></aside><section><div class="grid item-grid">${state.inventory.map(x=>itemCard(x,{selected:set.has(x.uid),buttons:`<button data-contract-item="${esc(x.uid)}">${set.has(x.uid)?'Убрать':'Добавить'}</button>`})).join('') || '<div class="empty">Нет предметов.</div>'}</div></section></div>`;
+    root.innerHTML = `<div class="contract-layout"><aside class="panel"><h3>Контракт</h3><div class="big-count">${selected.length}/10</div><p>Минимум 3 предмета.</p><p>Сумма: <b>${fmt(total)}</b></p><p>Примерный результат: <b>${fmt(total*rnd(1.05,1.85))}</b></p><button class="btn primary huge" data-action="make-contract" ${selected.length>=3?'':'disabled'}>Создать контракт</button><button class="btn" data-action="clear-contract">Очистить</button></aside><section><div class="grid item-grid">${state.inventory.filter(x=>!x.protected).map(x=>itemCard(x,{selected:set.has(x.uid),buttons:`<button data-contract-item="${esc(x.uid)}">${set.has(x.uid)?'Убрать':'Добавить'}</button>`})).join('') || '<div class="empty">Нет предметов.</div>'}</div></section></div>`;
   }
   function makeContract(){
     const set = new Set(state.contractSelected||[]);
-    const selected = state.inventory.filter(x=>set.has(x.uid));
+    const selected = state.inventory.filter(x=>set.has(x.uid) && !x.protected);
     if(selected.length < 3) return toast('Нужно минимум 3 предмета','bad');
     const total = selected.reduce((s,x)=>s+x.value,0);
     let candidates = catalog.items.filter(x => x.value >= total*.5 && x.value <= total*2.3);
@@ -1862,8 +1877,8 @@
   function renderMines(){
     const root = $('#minesRoot'); if(!root) return;
     const g = minesActiveGame();
-    const inv = [...state.inventory].sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
-    if(g && !state.inventory.some(x=>x.uid===g.stakeUid)) state.minesGame = null;
+    const inv = [...state.inventory].filter(x=>!x.protected).sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
+    if(g && !state.inventory.some(x=>x.uid===g.stakeUid && !x.protected)) state.minesGame = null;
     const current = minesActiveGame();
     const options = inv.map(x=>`<option value="${esc(x.uid)}">${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
     const selected = current ? state.inventory.find(x=>x.uid===current.stakeUid) : inv[0];
@@ -1894,8 +1909,9 @@
   }
   function startMines(){
     if(minesActiveGame()) return toast('Сначала заверши текущий сапёр','warn');
-    const stake = minesStakeItem() || state.inventory[0];
-    if(!stake) return toast('В инвентаре нет скина для ставки','bad');
+    const stake = minesStakeItem() || state.inventory.find(x=>!x.protected);
+    if(!stake) return toast('В инвентаре нет незаблокированного скина для ставки','bad');
+    if(stake.protected) return toast('Защищённый предмет нельзя поставить в сапёр','bad');
     const mineCount = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,18);
     const cells = [];
     while(cells.length < mineCount){ const n = Math.floor(cryptoRandom()*25); if(!cells.includes(n)) cells.push(n); }
@@ -2822,8 +2838,8 @@
   function renderPromos(){
     const root = $('#promosRoot'); if(!root) return;
     const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
-    const totalCodes = Object.keys(PROMO_CODES).length;
-    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Бонус сразу начисляется на баланс. Валюту отображения можно переключить в шапке.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME30</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
+    const totalCodes = Object.keys(PROMO_CODES).length + Object.keys(PROMO_REWARDS).length;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Бонус сразу начисляется: баланс, XP, ST, скин, наклейка, патч или косметика профиля. Валюту отображения можно переключить в шапке.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME30</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
   }
   function redeemPromo(){
     const input = $('#promoInput');
@@ -3029,6 +3045,59 @@
     applyRewardObject(reward, `Промокод ${code}`);
     if(input) input.value=''; save(); renderPromos();
   };
+
+
+  /* v31.15 — Major sticker album, daily timed shop, auto-sell, prestige and protected-item filters */
+  const V315_PROMOS = Object.freeze({
+    MAJORALBUM:{type:'tokens',amount:80,label:'80 ST'}, STICKERALBUM:{type:'category',category:'sticker',min:900,max:24000,label:'альбомная наклейка'}, DAILYSHOP:{type:'balance',amount:6500,label:'6 500 ₽'}, SHOPRESET:{type:'tokens',amount:45,label:'45 ST'}, AUTOSALE:{type:'balance',amount:4200,label:'4 200 ₽'}, PROTECTLOCK:{type:'xp',amount:900,label:'900 XP'}, PRESTIGE1:{type:'xp_tokens',xp:3200,tokens:120,label:'3200 XP + 120 ST'}, PRESTIGEPLUS:{type:'xp_tokens',xp:5600,tokens:180,label:'5600 XP + 180 ST'}, GLOBALPRESTIGE:{type:'xp_tokens',xp:8800,tokens:240,label:'8800 XP + 240 ST'}, MAJOR2025:{type:'category',category:'sticker',min:450,max:16000,label:'Major sticker'}, KATOWICEBOOST:{type:'category',category:'sticker',min:4500,max:60000,label:'Katowice drop'}, COPENHAGEN24:{type:'category',category:'sticker',min:650,max:18000,label:'Copenhagen sticker'}, SHANGHAI24:{type:'category',category:'sticker',min:650,max:18000,label:'Shanghai sticker'}, AUSTIN25:{type:'category',category:'sticker',min:650,max:18000,label:'Austin sticker'}, ALBUMXP:{type:'xp',amount:1500,label:'1500 XP'}, SAFEITEMS:{type:'profile',amount:1,label:'protect cosmetic'}, TIMERDEAL:{type:'balance',amount:7300,label:'7 300 ₽'}, CHEAPCLEAN:{type:'balance',amount:3600,label:'3 600 ₽'}, DROPSELL:{type:'balance',amount:5200,label:'5 200 ₽'}, MAJORPASS:{type:'item',min:900,max:9000,label:'viewer pass / item'}, PRESTIGELAB:{type:'xp_tokens',xp:2500,tokens:90,label:'2500 XP + 90 ST'}, STICKERKING:{type:'category',category:'sticker',min:1000,max:35000,label:'rare sticker'}, SHOPHUNTER:{type:'item',min:1500,max:22000,label:'shop hunter skin'}, LOCKEDDROP:{type:'item',min:1200,max:15000,label:'safe drop'}, CLEANINV:{type:'balance',amount:4800,label:'4 800 ₽'}, ALBUMFINAL:{type:'item',min:12000,max:90000,label:'album final item'}
+  });
+  function ensureV315(){
+    state.autoSell = (state.autoSell && typeof state.autoSell==='object') ? state.autoSell : {enabled:false,limit:200};
+    state.autoSell.enabled = !!state.autoSell.enabled;
+    state.autoSell.limit = clamp(Math.round(toNum(state.autoSell.limit,200)),50,5000);
+    state.majorAlbum = (state.majorAlbum && typeof state.majorAlbum==='object') ? state.majorAlbum : {claimed:[],rewards:[]};
+    state.majorAlbum.claimed = Array.isArray(state.majorAlbum.claimed) ? state.majorAlbum.claimed.map(String).slice(0,80) : [];
+    state.majorAlbum.rewards = Array.isArray(state.majorAlbum.rewards) ? state.majorAlbum.rewards.map(String).slice(0,80) : [];
+    state.dailyShop = (state.dailyShop && typeof state.dailyShop==='object') ? state.dailyShop : {bought:[],seed:''};
+    state.dailyShop.bought = Array.isArray(state.dailyShop.bought) ? state.dailyShop.bought.map(String).slice(0,80) : [];
+    state.dailyShop.seed = String(state.dailyShop.seed||'');
+    if(state.dailyShop.seed !== DAY_KEY()){ state.dailyShop.seed = DAY_KEY(); state.dailyShop.bought = []; }
+    state.prestige = Math.max(0, Math.round(toNum(state.prestige,0)));
+  }
+  function xpNeedForLevel(lvl){ return Math.round(XP_PER_LEVEL_BASE * Math.pow(Math.max(1,lvl), 1.18)); }
+  function totalXpForLevel(target){ let total=0; for(let l=1;l<target;l++) total += xpNeedForLevel(l); return total; }
+  function prestigeRoman(n){ const r=['0','I','II','III','IV','V','VI','VII','VIII','IX','X']; return r[n] || String(n); }
+  const oldAccountLevelV315 = accountLevel;
+  accountLevel = function(){ ensureV315(); const base = oldAccountLevelV315(); base.prestige = state.prestige||0; base.prestigeTitle = base.prestige ? `Prestige ${prestigeRoman(base.prestige)}` : 'Без престижа'; base.canPrestige = base.level >= 100; return base; };
+  const oldCompactStateV315 = compactState;
+  compactState = function(raw){ const out = oldCompactStateV315(raw); const src = raw && typeof raw==='object' ? raw : state; out.autoSell = src.autoSell || {enabled:false,limit:200}; out.majorAlbum = src.majorAlbum || {claimed:[],rewards:[]}; out.dailyShop = src.dailyShop || {bought:[],seed:DAY_KEY()}; out.prestige = Math.max(0,Math.round(toNum(src.prestige,0))); return out; };
+  function safeItems(){ return (state.inventory||[]).filter(x=>x && !x.protected); }
+  function maybeAutoSellDrop(it, source){ ensureV315(); if(!it || !state.autoSell.enabled) return false; if(it.protected || it.favorite) return false; if(/^rare|achievement|battle-pass|season|premium|dragon|album|prestige/i.test(String(source||''))) return false; const limit = state.autoSell.limit; if(toNum(it.value,0) > limit) return false; const net = applySaleCommission(it.value||0); state.inventory = state.inventory.filter(x=>x.uid!==it.uid); state.sold = Math.round(toNum(state.sold,0) + net); state.balance = Math.round(toNum(state.balance,0) + net); state.earned = Math.round(toNum(state.earned,0) + net); addTx(`Авто-продажа ${it.displayName||it.name}`, net); toast(`Авто-продано: ${it.displayName||it.name} за ${fmt(net)}`,'good'); return true; }
+  function checkMajorAlbumPickup(it){ ensureV315(); if(!it) return; const key=majorAlbumKey(it); if(key && !state.majorAlbum.claimed.includes(key)){ state.majorAlbum.claimed.push(key); if(state.majorAlbum.claimed.length%3===0) addSeasonTokens(10,'Альбом Major'); } }
+  function majorAlbumSlots(){ return [
+    {id:'katowice-2014', title:'Katowice 2014', match:/katowice 2014/i, reward:{type:'tokens',amount:80}}, {id:'cologne-2014', title:'Cologne 2014', match:/cologne 2014/i, reward:{type:'tokens',amount:45}}, {id:'atlanta-2017', title:'Atlanta 2017', match:/atlanta 2017/i, reward:{type:'xp',amount:900}}, {id:'boston-2018', title:'Boston 2018', match:/boston 2018/i, reward:{type:'tokens',amount:35}}, {id:'stockholm-2021', title:'Stockholm 2021', match:/stockholm 2021/i, reward:{type:'category',category:'sticker',min:700,max:12000}}, {id:'antwerp-2022', title:'Antwerp 2022', match:/antwerp 2022/i, reward:{type:'tokens',amount:35}}, {id:'paris-2023', title:'Paris 2023', match:/paris 2023/i, reward:{type:'xp_tokens',xp:600,tokens:30}}, {id:'copenhagen-2024', title:'Copenhagen 2024', match:/copenhagen 2024/i, reward:{type:'category',category:'sticker',min:600,max:16000}}, {id:'shanghai-2024', title:'Shanghai 2024', match:/shanghai 2024/i, reward:{type:'category',category:'sticker',min:600,max:16000}}, {id:'austin-2025', title:'Austin 2025', match:/austin 2025/i, reward:{type:'category',category:'sticker',min:600,max:18000}}, {id:'holo-gold', title:'Holo / Gold', match:/holo|gold|foil|lenticular/i, reward:{type:'tokens',amount:70}}, {id:'dignitas', title:'Dignitas / Legacy', match:/dignitas|ibuypower|titan|reason/i, reward:{type:'item',min:5000,max:60000}}
+  ]; }
+  function majorAlbumKey(it){ const name=String((it&&it.name)||it&&it.displayName||''); if(!/sticker/i.test(String((it&&it.category)||name))) return ''; const s=majorAlbumSlots().find(x=>x.match.test(name)); return s ? s.id : ''; }
+  function majorAlbumHtml(){ ensureV315(); const slots=majorAlbumSlots(); const inv=state.inventory||[]; return `<section class="panel block major-album"><div class="head"><div><h2>Альбом наклеек Major</h2><p>Собирай наклейки турниров. Слот заполняется, когда соответствующая наклейка есть или была получена в инвентарь.</p></div><b>${state.majorAlbum.claimed.length}/${slots.length}</b></div><div class="album-grid">${slots.map(s=>{ const has=state.majorAlbum.claimed.includes(s.id) || inv.some(x=>majorAlbumKey(x)===s.id); if(has && !state.majorAlbum.claimed.includes(s.id)) state.majorAlbum.claimed.push(s.id); const rew=(state.majorAlbum.rewards||[]).includes(s.id); return `<article class="album-slot ${has?'filled':''}"><h3>${has?'🏷️':'▫️'} ${esc(s.title)}</h3><p>${has?'Наклейка найдена':'Слот пуст'}</p><button class="btn ${has&&!rew?'primary':''}" data-action="claim-major-album" data-album="${esc(s.id)}" ${has&&!rew?'':'disabled'}>${rew?'Награда получена':has?'Забрать награду':'Нужно найти'}</button></article>`; }).join('')}</div></section>`; }
+  function claimMajorAlbum(idv){ ensureV315(); const s=majorAlbumSlots().find(x=>x.id===idv); if(!s) return toast('Слот не найден','bad'); if(!state.majorAlbum.claimed.includes(idv)) return toast('Сначала найди наклейку для этого слота','bad'); if(state.majorAlbum.rewards.includes(idv)) return toast('Награда уже получена','warn'); state.majorAlbum.rewards.push(idv); applyRewardObject(s.reward, `Альбом Major: ${s.title}`); if(state.majorAlbum.rewards.length>=majorAlbumSlots().length){ applyRewardObject({type:'item',min:15000,max:120000}, 'Финал альбома Major'); } save(); renderHub(); }
+  function secondsToMidnight(){ const now=new Date(); const end=new Date(now); end.setHours(24,0,0,0); return Math.max(0,end-now); }
+  function dailyShopItems(){ ensureV315(); const seed='daily-shop:'+DAY_KEY(); const pool=(catalog.items||[]).filter(x=>x && toNum(x.value,0)>=150 && toNum(x.value,0)<=80000); return [...(pool.length?pool:catalog.items)].sort((a,b)=>stableNoise(seed+':'+a.name)-stableNoise(seed+':'+b.name)).slice(0,8).map((x,i)=>Object.assign({},x,{shopId:slug(x.name)+'-'+i, shopPrice:Math.round(toNum(x.value,0)*(0.72+stableNoise(seed+':p:'+x.name)*0.46))})); }
+  function dailyShopHtml(){ ensureV315(); const left=secondsToMidnight(); const items=dailyShopItems(); return `<section class="panel block daily-shop"><div class="head"><div><h2>Ежедневный магазин</h2><p>Витрина обновляется в полночь. Покупки сохраняются только на текущий день.</p></div><div class="rank-badge">${formatTime(left)}</div></div><div class="market-grid">${items.map(it=>`<article class="mini-card"><div class="shop-img">${itemImageOrPlaceholder(it,'CS2')}</div><h3>${esc(it.name)}</h3><p>${esc(it.rarity||'')} · <b>${fmt(it.shopPrice)}</b></p><button class="btn primary" data-action="daily-shop-buy" data-shop="${esc(it.shopId)}" ${(state.dailyShop.bought||[]).includes(it.shopId)?'disabled':''}>${(state.dailyShop.bought||[]).includes(it.shopId)?'Куплено':'Купить'}</button></article>`).join('')}</div></section>`; }
+  function dailyShopBuy(shopId){ ensureV315(); const it=dailyShopItems().find(x=>x.shopId===shopId); if(!it) return toast('Товар не найден','bad'); if((state.dailyShop.bought||[]).includes(shopId)) return toast('Этот товар уже куплен сегодня','warn'); if(!spend(it.shopPrice, `Daily Shop: ${it.name}`)) return; state.dailyShop.bought.push(shopId); const got=addItem(Object.assign({},it,{value:it.shopPrice}), 'daily-shop'); addLive('Ты',got); addXP(35,'Daily Shop'); save(); renderHub(); showDrop(got,null); }
+  function autoSellSettingsHtml(){ ensureV315(); return `<section class="panel block autosell-panel"><div class="head"><div><h2>Авто-продажа дешёвых дропов</h2><p>Новые дешёвые предметы автоматически продаются после открытия кейса/награды. Избранное и защищённое не продаётся.</p></div><label class="switch-row"><input type="checkbox" id="autoSellEnabled" ${state.autoSell.enabled?'checked':''}> Включено</label></div><div class="creator-form"><input id="autoSellLimit" type="number" min="50" max="5000" step="50" value="${state.autoSell.limit}"><button class="btn primary" data-action="save-autosell">Сохранить лимит</button><span class="small">Сейчас продаёт всё до <b>${fmt(state.autoSell.limit)}</b> после комиссии.</span></div></section>`; }
+  function saveAutoSell(){ ensureV315(); const en=$('#autoSellEnabled'); const lim=$('#autoSellLimit'); state.autoSell.enabled=!!(en&&en.checked); state.autoSell.limit=clamp(Math.round(toNum(lim&&lim.value,200)),50,5000); save(); renderHub(); toast(`Авто-продажа ${state.autoSell.enabled?'включена':'выключена'} до ${fmt(state.autoSell.limit)}`,'good'); }
+  function prestigePanelHtml(){ const lvl=accountLevel(); const reward=120000+toNum(state.prestige,0)*35000; return `<section class="panel block prestige-panel"><div class="head"><div><h2>Престиж аккаунта</h2><p>После 100 уровня можно сбросить 100 уровней XP и получить постоянный престиж, ST и крупный бонус.</p></div><div class="rank-badge">${esc(lvl.prestigeTitle)}</div></div><p>Текущий уровень: <b>${lvl.level}</b>. Престижей: <b>${toNum(state.prestige,0)}</b>. Награда за следующий престиж: <b>${fmt(reward)}</b> + <b>150 ST</b>.</p><button class="btn primary huge" data-action="claim-prestige" ${lvl.canPrestige?'':'disabled'}>${lvl.canPrestige?'Получить престиж':'Нужен 100 уровень'}</button></section>`; }
+  function claimPrestige(){ ensureV315(); const lvl=accountLevel(); if(!lvl.canPrestige) return toast('Престиж доступен с 100 уровня аккаунта','bad'); const need=totalXpForLevel(100); state.xp=Math.max(0,Math.round(toNum(state.xp,0)-need)); state.prestige=Math.round(toNum(state.prestige,0))+1; addSeasonTokens(150,'Престиж'); earn(120000+(state.prestige-1)*35000, `Prestige ${prestigeRoman(state.prestige)}`); applyRewardObject({type:'profile'}, 'Престижная косметика'); save(); renderHub(); renderProfile(); }
+  const oldRenderHubV315 = renderHub;
+  renderHub = function(){ oldRenderHubV315(); const root=$('#hubRoot'); if(!root) return; ensureV315(); root.insertAdjacentHTML('afterbegin', prestigePanelHtml()+autoSellSettingsHtml()+dailyShopHtml()+majorAlbumHtml()); const refresh=()=>{ const el=$('.daily-shop .rank-badge'); if(el) el.textContent=formatTime(secondsToMidnight()); }; clearInterval(window.__v315ShopTimer); window.__v315ShopTimer=setInterval(refresh,1000); };
+  const oldRenderProfileV315 = renderProfile;
+  renderProfile = function(){ oldRenderProfileV315(); const root=$('#profileRoot'); if(!root) return; const lvl=accountLevel(); root.insertAdjacentHTML('afterbegin', `<section class="panel block prestige-mini"><div class="head"><div><h2>${esc(lvl.prestigeTitle)}</h2><p>Система престижа открывается после 100 уровня.</p></div><a class="btn" href="quests.html">Престиж и развитие</a></div></section>`); };
+  const oldRenderPromosV315 = renderPromos;
+  renderPromos = function(){ oldRenderPromosV315(); const root=$('#promosRoot'); if(!root) return; root.insertAdjacentHTML('beforeend', `<section class="panel block"><div class="head"><h2>Новые типы промокодов v31.15</h2></div><div class="promo-used">${Object.keys(V315_PROMOS).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div></section>`); };
+  const oldRedeemPromoV315 = redeemPromo;
+  redeemPromo = function(){ const input=$('#promoInput'); const code=normalizePromoCode(input&&input.value); if(V315_PROMOS[code]){ state.usedPromos=Array.isArray(state.usedPromos)?state.usedPromos:[]; if(state.usedPromos.includes(code)) return toast('Этот промокод уже активирован','warn'); state.usedPromos.push(code); applyRewardObject(V315_PROMOS[code], `Промокод ${code}`); if(input) input.value=''; save(); renderPromos(); return; } return oldRedeemPromoV315(); };
+  document.addEventListener('click', e=>{ const btn=e.target.closest('[data-action]'); if(!btn) return; const a=btn.dataset.action; if(a==='claim-major-album') return claimMajorAlbum(btn.dataset.album||''); if(a==='daily-shop-buy') return dailyShopBuy(btn.dataset.shop||''); if(a==='save-autosell') return saveAutoSell(); if(a==='claim-prestige') return claimPrestige(); });
+
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
