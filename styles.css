@@ -112,3 +112,6 @@ body:not(.nav-open) .navlinks{pointer-events:none!important;}
 .modal:not(.show){display:none!important;pointer-events:none!important;}
 .modal.show,.modal.show *{pointer-events:auto;}
 @supports(-webkit-touch-callout:none){.btn,.small-btn,button,a[href],[data-open-case],[data-view-case],[data-action]{-webkit-touch-callout:none;cursor:pointer;min-height:44px;}}
+
+/* v29 stable mobile click fixes */
+button,a,[data-open-case],[data-view-case],[data-action],[data-sell],[data-close-modal],[data-contract-item],[data-upgrade-item]{touch-action:manipulation;-webkit-tap-highlight-color:rgba(255,255,255,.12);cursor:pointer;position:relative;z-index:2}.modal{pointer-events:none}.modal.show{pointer-events:auto}.menu-backdrop{pointer-events:none}.nav-open .menu-backdrop{pointer-events:auto}.case-card,.item-card,.panel,.hero-card{position:relative}.case-actions,.item-actions,.drop-actions,.hero-actions{position:relative;z-index:5}@media(max-width:700px){.case-card{overflow:visible}.case-actions{display:grid;grid-template-columns:1fr 1fr}.btn,.small-btn{min-height:52px}}
