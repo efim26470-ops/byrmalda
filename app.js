@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '30.0.0';
+  const VERSION = '31.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -15,15 +15,15 @@
     'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/'
   ];
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
-  const RUB_PER_USD = 92;
+  const RUB_PER_USD = 74;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v30';
+  const PRICE_VERSION = 'market-rub-v31-realistic';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
   const PROMO_CODES = Object.freeze({
     WELCOME30: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
-    KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 50000, TEST100K: 100000
+    KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 20000, TEST100K: 15000
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -607,21 +607,28 @@
   function createSpecialCase(idv,name,rar,pool,price,text){
     pool = (pool || []).filter(Boolean).slice(0,240);
     if(pool.length < 2) return null;
-    const items = pool.map(x => Object.assign({}, x, {weight: (rarityWeight[x.rarity] || 8) * (x.value > price ? .6 : 1.2)}));
+    const basePrice = Math.max(1, Math.round(toNum(price, 300)));
+    const items = pool.map(x => Object.assign({}, x, {weight: (rarityWeight[x.rarity] || 8) * (x.value > basePrice ? .6 : 1.2)}));
+    // v31: фиксированные кастомные кейсы тоже получают house-edge цену,
+    // иначе отдельные пулы вроде агентов гарантированно давали прибыль.
+    const fairPrice = Math.round(expectedDropValue(items, 'special') * 1.28);
+    price = clamp(Math.max(basePrice, fairPrice), 120, 90000);
     return {id:idv, name, price, image:thematicCaseImage(name, rarityColors[rar] || themeColor({id:idv,name})), items, source:'Custom Pool', kind:'special', rareText:text};
   }
   function withHiddenOdds(c, idx=0){
+    // v31: профили стали заметно жёстче. Симулятор остаётся фановой игрой,
+    // но больше не должен превращать несколько тысяч ₽LC в миллионы за пару открытий.
     const profiles = [
-      {profitOdds:.16,jackpot:.07,cheap:.55,priceMult:1.18},
-      {profitOdds:.26,jackpot:.12,cheap:.38,priceMult:1.05},
-      {profitOdds:.38,jackpot:.20,cheap:.24,priceMult:1.00},
-      {profitOdds:.52,jackpot:.33,cheap:.14,priceMult:.92},
-      {profitOdds:.74,jackpot:.48,cheap:.08,priceMult:.84},
-      {profitOdds:1.02,jackpot:.72,cheap:.04,priceMult:.78}
+      {profitOdds:.62,jackpot:.004,cheap:.72,priceMult:1.35},
+      {profitOdds:.68,jackpot:.005,cheap:.66,priceMult:1.28},
+      {profitOdds:.74,jackpot:.007,cheap:.60,priceMult:1.22},
+      {profitOdds:.80,jackpot:.010,cheap:.54,priceMult:1.16},
+      {profitOdds:.86,jackpot:.014,cheap:.48,priceMult:1.10},
+      {profitOdds:.92,jackpot:.018,cheap:.42,priceMult:1.06}
     ];
     const p = profiles[Math.abs(idx) % profiles.length];
     c._odds = p;
-    if(!c._priced){ c.price = clamp(Math.round(toNum(c.price,300) * (p.priceMult || 1)), 45, c.kind === 'special' ? 18000 : 9000); c._priced = true; }
+    if(!c._priced){ c.price = clamp(Math.round(toNum(c.price,300) * (p.priceMult || 1)), 75, c.kind === 'special' ? 26000 : 14000); c._priced = true; }
     return c;
   }
   function apiItem(raw, category='skin'){
@@ -692,19 +699,19 @@
   }
   function knownMarketRub(lower){
     const exact = [
-      ['awp | dragon lore', 950000], ['m4a4 | howl', 580000], ['ak-47 | wild lotus', 780000], ['awp | gungnir', 820000], ['awp | medusa', 380000],
-      ['awp | desert hydra', 175000], ['awp | the prince', 220000], ['ak-47 | fire serpent', 92000], ['ak-47 | hydroponic', 160000], ['ak-47 | gold arabesque', 145000],
+      ['awp | dragon lore', 1120000], ['m4a4 | howl', 610000], ['ak-47 | wild lotus', 820000], ['awp | gungnir', 870000], ['awp | medusa', 410000],
+      ['awp | desert hydra', 175000], ['awp | the prince', 220000], ['ak-47 | fire serpent', 98000], ['ak-47 | hydroponic', 160000], ['ak-47 | gold arabesque', 145000],
       ['m4a1-s | knight', 155000], ['m4a4 | poseidon', 120000], ['m4a1-s | hot rod', 95000], ['m4a1-s | blue phosphor', 76000], ['m4a1-s | icarus fell', 44000],
-      ['ak-47 | vulcan', 18500], ['ak-47 | fuel injector', 14000], ['ak-47 | bloodsport', 6500], ['ak-47 | the empress', 6200], ['ak-47 | head shot', 4200], ['ak-47 | redline', 2700], ['ak-47 | legion of anubis', 2100], ['ak-47 | ice coaled', 1500],
-      ['awp | asiimov', 11800], ['awp | hyper beast', 6900], ['awp | neo-noir', 3300], ['awp | containment breach', 7800], ['awp | chromatic aberration', 3200], ['awp | duality', 900], ['awp | fever dream', 620], ['awp | paw', 380],
-      ['m4a1-s | printstream', 8800], ['m4a1-s | hyper beast', 3800], ['m4a1-s | decimator', 1850], ['m4a1-s | nightmare', 1300], ['m4a1-s | player two', 3100], ['m4a1-s | leaded glass', 850],
+      ['ak-47 | vulcan', 17000], ['ak-47 | fuel injector', 14000], ['ak-47 | bloodsport', 6500], ['ak-47 | the empress', 6200], ['ak-47 | head shot', 3900], ['ak-47 | redline', 2250], ['ak-47 | legion of anubis', 2100], ['ak-47 | ice coaled', 1500],
+      ['awp | asiimov', 10800], ['awp | hyper beast', 6200], ['awp | neo-noir', 3300], ['awp | containment breach', 7800], ['awp | chromatic aberration', 3200], ['awp | duality', 900], ['awp | fever dream', 620], ['awp | paw', 380],
+      ['m4a1-s | printstream', 8100], ['m4a1-s | hyper beast', 3800], ['m4a1-s | decimator', 1850], ['m4a1-s | nightmare', 1300], ['m4a1-s | player two', 3100], ['m4a1-s | leaded glass', 850],
       ['m4a4 | neo-noir', 3100], ['m4a4 | the emperor', 3400], ['m4a4 | desolate space', 1700], ['m4a4 | in living color', 1800], ['m4a4 | temukau', 5600],
-      ['desert eagle | printstream', 6500], ['desert eagle | ocean drive', 2500], ['desert eagle | code red', 2600], ['desert eagle | golden koi', 5200], ['desert eagle | conspiracy', 1100],
-      ['usp-s | kill confirmed', 7800], ['usp-s | printstream', 4800], ['usp-s | the traitor', 3200], ['usp-s | cortex', 820], ['usp-s | neo-noir', 2200],
+      ['desert eagle | printstream', 5900], ['desert eagle | ocean drive', 2500], ['desert eagle | code red', 2600], ['desert eagle | golden koi', 5200], ['desert eagle | conspiracy', 1100],
+      ['usp-s | kill confirmed', 7200], ['usp-s | printstream', 4800], ['usp-s | the traitor', 3200], ['usp-s | cortex', 820], ['usp-s | neo-noir', 2200],
       ['glock-18 | gamma doppler', 2600], ['glock-18 | bullet queen', 1700], ['glock-18 | water elemental', 920], ['glock-18 | vogue', 680], ['glock-18 | moonrise', 240],
       ['p250 | asiimov', 780], ['p250 | see ya later', 650], ['tec-9 | fuel injector', 650], ['tec-9 | isaac', 190], ['five-seven | hyper beast', 1800], ['five-seven | fairy tale', 950],
-      ['mp9 | food chain', 720], ['mp9 | starlight protector', 1200], ['mac-10 | neon rider', 1350], ['mac-10 | disco tech', 780], ['p90 | death grip', 380], ['ssg 08 | fever dream', 390], ['ump-45 | primal saber', 680], ['famas | mecha industries', 820], ['galil ar | chatterbox', 560],
-      ['sticker | crown', 45000], ['sticker | howl', 42000], ['katowice 2014', 32000], ['ibuyPower | katowice 2014', 920000], ['titan | katowice 2014', 540000], ['vox eminor | katowice 2014', 92000], ['reason gaming | katowice 2014', 250000], ['dignitas | katowice 2014', 180000]
+      ['mp9 | food chain', 680], ['mp9 | starlight protector', 1200], ['mac-10 | neon rider', 1250], ['mac-10 | disco tech', 780], ['p90 | death grip', 380], ['ssg 08 | fever dream', 390], ['ump-45 | primal saber', 680], ['famas | mecha industries', 820], ['galil ar | chatterbox', 520],
+      ['sticker | crown', 43000], ['sticker | howl', 39500], ['katowice 2014', 32000], ['ibuyPower | katowice 2014', 860000], ['titan | katowice 2014', 520000], ['vox eminor | katowice 2014', 92000], ['reason gaming | katowice 2014', 250000], ['dignitas | katowice 2014', 180000]
     ];
     const found = exact.find(([key]) => lower.includes(String(key).toLowerCase()));
     return found ? found[1] : 0;
@@ -772,15 +779,21 @@
   }
   function calcPrice(items, idx, kind='case'){
     if(!items.length) return 300;
-    const avg = weightedAverageValue(items);
-    const mult = kind === 'collection' ? .34 : kind === 'special' ? .42 : .36;
-    const spread = [45, 85, 150, 260, 480, 850, 1500, 2800, 5200][idx % 9];
-    const raw = avg * mult + spread + idx * 9;
-    return clamp(Math.round(raw), kind === 'special' ? 350 : 35, kind === 'special' ? 65000 : 14000);
+    const ev = expectedDropValue(items, kind);
+    const mult = kind === 'collection' ? .74 : kind === 'special' ? .86 : .78;
+    const spread = [95, 135, 190, 280, 420, 650, 980, 1450, 2200][idx % 9];
+    const raw = ev * mult + spread + idx * 11;
+    return clamp(Math.round(raw), kind === 'special' ? 650 : 75, kind === 'special' ? 90000 : 22000);
   }
   function weightedAverageValue(items){
-    const sumW = items.reduce((s,x)=>s+(rarityWeight[x.rarity]||x.weight||6),0) || 1;
-    return items.reduce((s,x)=>s+(x.value||0)*(rarityWeight[x.rarity]||x.weight||6),0) / sumW;
+    const sumW = items.reduce((s,x)=>s+(dropBaseWeight(x,{kind:'special',items})||1),0) || 1;
+    return items.reduce((s,x)=>s+(x.value||0)*(dropBaseWeight(x,{kind:'special',items})||1),0) / sumW;
+  }
+  function expectedDropValue(items, kind='case'){
+    const fake = {kind, items};
+    const weighted = items.map(x => ({it:x, w:dropBaseWeight(x, fake)}));
+    const sumW = weighted.reduce((s,x)=>s+x.w,0) || 1;
+    return weighted.reduce((s,x)=>s + toNum(x.it.value,0) * x.w, 0) / sumW;
   }
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9а-яё]+/gi,'-').replace(/^-|-$/g,''); }
 
@@ -957,7 +970,7 @@
     currentCase = c.id;
     $('#caseModalTitle').textContent = c.name;
     const content = [...c.items].sort((a,b)=>(rarityValue[a.rarity]||0)-(rarityValue[b.rarity]||0)).map(x=>caseContentCard(x)).join('');
-    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside">${caseVisual(c,true)}<div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть 1x за ${fmt(c.price)}</button><button class="btn blue huge" data-action="spin-fast">Открыть быстро 1x</button><div class="multi-open-row"><button class="small-btn" data-action="open-multi" data-count="3">Быстро x3 · ${fmt(c.price*3)}</button><button class="small-btn" data-action="open-multi" data-count="5">Быстро x5 · ${fmt(c.price*5)}</button><button class="small-btn" data-action="open-multi" data-count="10">Быстро x10 · ${fmt(c.price*10)}</button></div><button class="btn" data-action="add-debug-coins">+10 000 ₽LC для теста</button><p class="small">Стрелка по центру показывает предмет при обычном прокруте. Быстрое открытие пропускает анимацию и сразу начисляет дроп.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
+    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside">${caseVisual(c,true)}<div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть 1x за ${fmt(c.price)}</button><button class="btn blue huge" data-action="spin-fast">Открыть быстро 1x</button><div class="multi-open-row"><button class="small-btn" data-action="open-multi" data-count="3">Быстро x3 · ${fmt(c.price*3)}</button><button class="small-btn" data-action="open-multi" data-count="5">Быстро x5 · ${fmt(c.price*5)}</button><button class="small-btn" data-action="open-multi" data-count="10">Быстро x10 · ${fmt(c.price*10)}</button></div><p class="small">Стрелка по центру показывает предмет при обычном прокруте. Быстрое открытие пропускает анимацию и сразу начисляет дроп.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
     openModal('#caseModal');
     if(autoSpin) setTimeout(() => spinCase(c.id), 120);
   }
@@ -973,19 +986,63 @@
     for(let i=0;i<pool.length;i++){ r -= weights[i]; if(r <= 0) return pool[i]; }
     return pool[pool.length-1];
   }
+  function rarityBucket(r){
+    if(['Exceedingly Rare','Extraordinary','Contraband'].includes(r)) return 'Rare Special';
+    if(['Master','Master Agent'].includes(r)) return 'Covert';
+    if(['Superior','Superior Agent'].includes(r)) return 'Classified';
+    if(['Exceptional','Exceptional Agent'].includes(r)) return 'Restricted';
+    if(['Distinguished','Distinguished Agent'].includes(r)) return 'Mil-Spec Grade';
+    return r || 'Mil-Spec Grade';
+  }
+  function officialBucketOdds(c){
+    const key = `${c && c.name || ''} ${c && c.source || ''} ${c && c.kind || ''}`.toLowerCase();
+    if(/sticker|capsule|tournament|patch|charm|keychain|agent/.test(key)){
+      return {'High Grade':80,'Remarkable':16,'Exotic':3.2,'Extraordinary':.64,'Mil-Spec Grade':80,'Restricted':16,'Classified':3.2,'Covert':.64,'Rare Special':.26};
+    }
+    return {'Mil-Spec Grade':79.92327,'Restricted':15.98465,'Classified':3.19693,'Covert':.63939,'Rare Special':.25575,'Consumer Grade':55,'Base Grade':55,'Industrial Grade':28,'High Grade':80,'Remarkable':16,'Exotic':3.2,'Extraordinary':.64};
+  }
+  function dropBaseWeight(it,c){
+    const pool = c && c.items && c.items.length ? c.items : fallbackItems;
+    const kind = c && c.kind;
+    if(kind === 'case' || kind === 'collection'){
+      const bucket = rarityBucket(it.rarity);
+      const odds = officialBucketOdds(c);
+      const same = pool.filter(x => rarityBucket(x.rarity) === bucket).length || 1;
+      return Math.max(0.000001, (odds[bucket] || odds[it.rarity] || 1) / same);
+    }
+    return Math.max(0.01, toNum(it.weight, rarityWeight[it.rarity] || 6));
+  }
+  function priceRiskMultiplier(ratio,c){
+    const odds = (c && c._odds) || {profitOdds:.72,jackpot:.008,cheap:.56};
+    let m = 1;
+    if(ratio < .18) m *= 2.25 + odds.cheap;
+    else if(ratio < .35) m *= 1.80 + odds.cheap * .75;
+    else if(ratio < .60) m *= 1.35 + odds.cheap * .45;
+    else if(ratio < .85) m *= 1.05;
+    else {
+      m *= odds.profitOdds;
+      if(ratio >= 1.30) m *= .88;
+      if(ratio >= 1.75) m *= .65;
+      if(ratio >= 2.50) m *= .32;
+      if(ratio >= 5.00) m *= .080;
+      if(ratio >= 10.0) m *= .020;
+      if(ratio >= 25.0) m *= .0035;
+      if(ratio >= 50.0) m *= .00070;
+      if(ratio >= 100.) m *= .00009;
+      if(ratio >= 250.) m *= .000008;
+      if(ratio >= 500.) m *= .000001;
+    }
+    if(c && c.kind === 'special') m *= ratio >= 1 ? .62 : 1.18;
+    return m;
+  }
   function hiddenCaseWeight(it,c){
-    let w = Math.max(0.01, toNum(it.weight, rarityWeight[it.rarity] || 6));
+    let w = dropBaseWeight(it,c);
     const price = Math.max(1, toNum(c && c.price, 1));
     const ratio = toNum(it.value,0) / price;
-    const odds = (c && c._odds) || {profitOdds:.42,jackpot:.25,cheap:.1};
-    if(ratio >= 1) w *= odds.profitOdds;
-    if(ratio >= 1.35) w *= (odds.profitOdds * 0.9);
-    if(ratio >= 2.2) w *= odds.jackpot;
-    if(ratio < .55) w *= (1 + odds.cheap);
-    if(ratio < .25) w *= (1 + odds.cheap * 0.8);
-    if(c && c.kind === 'special') w *= ratio >= 1 ? 0.76 : 1.12;
-    w *= rnd(.86, 1.18);
-    return w;
+    w *= priceRiskMultiplier(ratio,c);
+    // Маленький детерминированный шум оставляет разнообразие, но не ломает экономику.
+    w *= .96 + stableNoise(`${c && c.id || ''}:${it.id || it.name}`) * .08;
+    return Math.max(0.00000001, w);
   }
   function spinCase(caseId, opts={}){
     if(busy.case) return toast('Рулетка уже крутится','warn');
@@ -1583,7 +1640,7 @@
     const root = $('#installRoot'); if(!root) return;
     const ios = isIOSDevice();
     const standalone = isStandaloneMode();
-    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v23:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
+    root.innerHTML = `<div class="grid cards-2 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт работает как обычная статическая PWA: достаточно залить файлы в репозиторий. Никакие .bat, database-файлы и сервер не нужны.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article></div><div class="notice block ios-notice"><b>GitHub Pages v31:</b> чистая статическая сборка без .bat и архивов для Windows. Save хранится только в браузере пользователя через localStorage/IndexedDB, без внешней базы данных.</div>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
@@ -1619,7 +1676,7 @@
   }
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 ₽LC. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 ₽LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 ₽LC. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
     if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 ₽LC?')) return;
