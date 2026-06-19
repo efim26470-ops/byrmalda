@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '13.0.0';
+  const VERSION = '14.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -9,18 +9,15 @@
   const IDB_STORE = 'saves';
   const IDB_SAVE_ID = 'main';
   const LEGACY_KEYS = ['cs2_case_lab_state','cs2_case_lab_state_backup','cs2_case_lab_v8_state','cs2_case_lab_v7_state','cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state','cs2_case_lab_v3_state','cs2_case_lab_v2_state'];
-  const API_BASE = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/';
-  const API_CRATES = API_BASE + 'crates.json';
-  const API_STICKERS = API_BASE + 'stickers.json';
-  const API_AGENTS = API_BASE + 'agents.json';
-  const API_PATCHES = API_BASE + 'patches.json';
-  const API_KEYCHAINS = API_BASE + 'keychains.json';
-  const API_COLLECTIBLES = API_BASE + 'collectibles.json';
-  const API_SKINS = API_BASE + 'skins.json';
-  const API_COLLECTIONS = API_BASE + 'collections.json';
+  const API_BASES = [
+    'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/public/api/en/',
+    'https://bymykel.github.io/CSGO-API/api/en/',
+    'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/'
+  ];
+  const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
   const RUB_PER_USD = 92;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'rub-v13';
+  const PRICE_VERSION = 'rub-v14';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -40,6 +37,19 @@
   const sample = arr => arr[Math.floor(cryptoRandom() * arr.length)];
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const fmt = n => `${Math.round(Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('ru-RU')} ${CURRENCY}`;
+  function fixImageUrl(url){
+    url = String(url || '').trim();
+    if(!url) return '';
+    // raw.githubusercontent иногда не отдает картинки на мобильных/у провайдеров.
+    // Переводим ассеты ByMykel на jsDelivr CDN, чтобы фото кейсов и скинов грузились стабильнее на GitHub Pages/iOS.
+    const imgRaw = 'https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/';
+    if(url.startsWith(imgRaw)) return 'https://cdn.jsdelivr.net/gh/ByMykel/counter-strike-image-tracker@main/' + url.slice(imgRaw.length);
+    const apiRaw = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/';
+    if(url.startsWith(apiRaw)) return 'https://cdn.jsdelivr.net/gh/ByMykel/CSGO-API@main/' + url.slice(apiRaw.length);
+    return url;
+  }
+  function imgSrc(url, fallback){ return fixImageUrl(url) || fallback || svgSkin('CS2 Skin'); }
+  const imgSafe = v => esc(imgSrc(v,''));
   const id = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
   const rarityColors = {
@@ -63,6 +73,8 @@
   const svgCase = (name='CS2') => 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#f59e0b"/><stop offset="1" stop-color="#ef4444"/></linearGradient><linearGradient id="m" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffffff" stop-opacity=".25"/><stop offset="1" stop-color="#000000" stop-opacity=".25"/></linearGradient></defs><rect x="110" y="130" width="420" height="240" rx="34" fill="#111827" stroke="#334155" stroke-width="14"/><path d="M190 130V95c0-34 25-58 60-58h140c35 0 60 24 60 58v35" fill="none" stroke="#475569" stroke-width="20"/><rect x="145" y="168" width="350" height="158" rx="24" fill="url(#g)"/><rect x="145" y="168" width="350" height="158" rx="24" fill="url(#m)"/><path d="M170 203h300M170 248h300M170 293h300" stroke="#111827" stroke-width="10" opacity=".28"/><text x="320" y="272" font-family="Arial" font-weight="900" font-size="68" fill="#0b1020" text-anchor="middle">${esc(name).slice(0,9)}</text></svg>`);
   const svgSkin = (name='CS2 Skin', c1='#60a5fa', c2='#f97316') => 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="${c1}"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="${c2}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="760" height="360" rx="38" fill="#111827"/><circle cx="110" cy="80" r="120" fill="${c1}" opacity=".15"/><circle cx="640" cy="270" r="150" fill="${c2}" opacity=".13"/><g filter="url(#s)" transform="translate(46 50)"><path d="M62 148h362l38-42h112c31 0 58 20 69 50l31 86h-93l-18-46h-98l-55 62h-94l58-65H180l-36 44H62l32-51H55c-42 0-42-38 7-38z" fill="url(#g)"/><path d="M132 112h198l40-50h96l-42 50h124c24 0 44 14 54 36H92c4-20 18-36 40-36z" fill="#e5e7eb" opacity=".25"/><path d="M205 185h105M425 150h125M520 198h72" stroke="#0f172a" stroke-width="14" stroke-linecap="round" opacity=".42"/><circle cx="605" cy="238" r="22" fill="#0b1020"/></g><text x="380" y="56" fill="#fff" font-family="Arial" font-size="34" font-weight="900" text-anchor="middle">${esc(name).slice(0,30)}</text></svg>`);
 
+  const cs2Img = path => 'https://cdn.jsdelivr.net/gh/ByMykel/counter-strike-image-tracker@main/static/panorama/images/econ/' + path;
+
   const fallbackItems = [
     ['ak_redline','AK-47 | Redline','Classified',1200,'#111827','#ef4444'],['ak_vulcan','AK-47 | Vulcan','Covert',3600,'#38bdf8','#2563eb'],['ak_headshot','AK-47 | Head Shot','Covert',4100,'#22c55e','#ef4444'],
     ['ak_ice','AK-47 | Ice Coaled','Classified',1100,'#67e8f9','#14b8a6'],['m4a1_print','M4A1-S | Printstream','Covert',4300,'#f8fafc','#a855f7'],['m4a1_decimator','M4A1-S | Decimator','Classified',1250,'#ec4899','#2563eb'],
@@ -76,12 +88,18 @@
     ['gloves_sport','★ Sport Gloves | Vice','Extraordinary',11000,'#f472b6','#8b5cf6'],['gloves_driver','★ Driver Gloves | King Snake','Extraordinary',8700,'#f8fafc','#94a3b8'],['gloves_broken','★ Broken Fang Gloves | Jade','Extraordinary',7600,'#22c55e','#064e3b']
   ].map(x => ({id:x[0],name:x[1],rarity:x[2],value:x[3],rarityColor:rarityColors[x[2]]||'#60a5fa',weight:rarityWeight[x[2]]||8,image:svgSkin(x[1],x[4],x[5])})).map(applySteamLikePrice);
   const fallbackCases = [
-    {id:'kilowatt',name:'Kilowatt Case',price:650,image:svgCase('KILO'),items:fallbackItems.slice(0,18).concat(fallbackItems.slice(-4)),source:'offline-fallback'},
-    {id:'revolution',name:'Revolution Case',price:720,image:svgCase('REV'),items:fallbackItems.slice(4,23).concat(fallbackItems.slice(-4)),source:'offline-fallback'},
-    {id:'dreams',name:'Dreams & Nightmares Case',price:600,image:svgCase('DREAM'),items:fallbackItems.slice(8,24).concat(fallbackItems.slice(-5)),source:'offline-fallback'},
-    {id:'premium',name:'Covert Premium Case',price:1500,image:svgCase('VIP'),items:fallbackItems.filter(i => ['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(i.rarity)),source:'offline-fallback'},
-    {id:'knife',name:'Knife & Gloves Case',price:3200,image:svgCase('GOLD'),items:fallbackItems.filter(i => ['Covert','Exceedingly Rare','Extraordinary'].includes(i.rarity)),source:'offline-fallback'}
-  ];
+    {id:'kilowatt',name:'Kilowatt Case',price:690,image:cs2Img('weapon_cases/crate_community_33_png.png'),items:fallbackItems.slice(0,18).concat(fallbackItems.slice(-4)),source:'offline-classic',kind:'case'},
+    {id:'revolution',name:'Revolution Case',price:760,image:cs2Img('weapon_cases/crate_community_31_png.png'),items:fallbackItems.slice(4,23).concat(fallbackItems.slice(-4)),source:'offline-classic',kind:'case'},
+    {id:'recoil',name:'Recoil Case',price:720,image:cs2Img('weapon_cases/crate_community_30_png.png'),items:fallbackItems.slice(2,24).concat(fallbackItems.slice(-5)),source:'offline-classic',kind:'case'},
+    {id:'dreams',name:'Dreams & Nightmares Case',price:650,image:cs2Img('weapon_cases/crate_community_29_png.png'),items:fallbackItems.slice(8,24).concat(fallbackItems.slice(-5)),source:'offline-classic',kind:'case'},
+    {id:'snakebite',name:'Snakebite Case',price:520,image:cs2Img('weapon_cases/crate_community_27_png.png'),items:fallbackItems.slice(0,20).concat(fallbackItems.slice(-4)),source:'offline-classic',kind:'case'},
+    {id:'fracture',name:'Fracture Case',price:540,image:cs2Img('weapon_cases/crate_community_26_png.png'),items:fallbackItems.slice(3,22).concat(fallbackItems.slice(-4)),source:'offline-classic',kind:'case'},
+    {id:'clutch',name:'Clutch Case',price:620,image:cs2Img('weapon_cases/crate_community_17_png.png'),items:fallbackItems.slice(5,24).concat(fallbackItems.slice(-5)),source:'offline-classic',kind:'case'},
+    {id:'prisma2',name:'Prisma 2 Case',price:590,image:cs2Img('weapon_cases/crate_community_25_png.png'),items:fallbackItems.slice(0,21).concat(fallbackItems.slice(-4)),source:'offline-classic',kind:'case'},
+    {id:'spectrum2',name:'Spectrum 2 Case',price:820,image:cs2Img('weapon_cases/crate_community_16_png.png'),items:fallbackItems.slice(4,24).concat(fallbackItems.slice(-5)),source:'offline-classic',kind:'case'},
+    {id:'premium',name:'Covert Premium Case',price:1500,image:svgCase('VIP'),items:fallbackItems.filter(i => ['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(i.rarity)),source:'offline-fallback',kind:'special'},
+    {id:'knife',name:'Knife & Gloves Case',price:3200,image:svgCase('GOLD'),items:fallbackItems.filter(i => ['Covert','Exceedingly Rare','Extraordinary'].includes(i.rarity)),source:'offline-fallback',kind:'special'}
+  ].map((c,i)=>withHiddenOdds(c,i));
   let catalog = {items:fallbackItems, cases:fallbackCases, source:'fallback'};
   let storageWarned = false;
   let storageHealth = {local:false, session:false, indexedDB:false, windowName:false, mode:'starting', lastError:''};
@@ -112,7 +130,7 @@
   function normalizeInvItem(it){
     if(!it || !(it.name || it.displayName)) return null;
     const r = it.rarity || 'Mil-Spec Grade';
-    let normalized = Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:it.image||svgSkin(it.name||'Skin'), currency:it.currency||CURRENCY, priceVersion:it.priceVersion||''});
+    let normalized = Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:fixImageUrl(it.image)||svgSkin(it.name||'Skin'), currency:it.currency||CURRENCY, priceVersion:it.priceVersion||''});
     if(normalized.priceVersion !== PRICE_VERSION){
       const repriced = applySteamLikePrice(normalized);
       normalized.value = repriced.value; normalized.steamUsd = repriced.steamUsd; normalized.steamRub = repriced.steamRub; normalized.currency = CURRENCY; normalized.priceVersion = PRICE_VERSION;
@@ -137,7 +155,7 @@
       name: it.name || it.displayName || 'CS2 Item', displayName: it.displayName || it.name || 'CS2 Item',
       rarity: r, rarityColor: it.rarityColor || rarityColors[r] || '#60a5fa', category: it.category || 'skin',
       value: Math.max(1, Math.round(toNum(it.value, 100))), steamUsd: it.steamUsd || undefined, steamRub: it.steamRub || undefined, currency: it.currency || CURRENCY, priceVersion: it.priceVersion || PRICE_VERSION, marketHashName: it.marketHashName || it.market_hash_name || it.name,
-      image: it.image || svgSkin(it.name || it.displayName || 'CS2 Item'), wear: it.wear || '', float: it.float || '', source: it.source || '', addedAt: Math.max(0, Math.round(toNum(it.addedAt, Date.now())))
+      image: fixImageUrl(it.image) || svgSkin(it.name || it.displayName || 'CS2 Item'), wear: it.wear || '', float: it.float || '', source: it.source || '', addedAt: Math.max(0, Math.round(toNum(it.addedAt, Date.now())))
     };
   }
   function compactState(raw){
@@ -387,10 +405,19 @@
       return await res.json();
     }finally{ clearTimeout(timeout); }
   }
+  async function loadEndpoint(name){
+    const file = API_ENDPOINTS[name];
+    let lastError = null;
+    for(const base of API_BASES){
+      try{ return await loadJSON(base + file); }
+      catch(e){ lastError = e; }
+    }
+    throw lastError || new Error('API endpoint failed: ' + name);
+  }
   async function loadCatalog(){
     try{
       const [cratesRes, stickersRes, agentsRes, patchesRes, keychainsRes, collectiblesRes, skinsRes, collectionsRes] = await Promise.allSettled([
-        loadJSON(API_CRATES), loadJSON(API_STICKERS), loadJSON(API_AGENTS), loadJSON(API_PATCHES), loadJSON(API_KEYCHAINS), loadJSON(API_COLLECTIBLES), loadJSON(API_SKINS), loadJSON(API_COLLECTIONS)
+        loadEndpoint('crates'), loadEndpoint('stickers'), loadEndpoint('agents'), loadEndpoint('patches'), loadEndpoint('keychains'), loadEndpoint('collectibles'), loadEndpoint('skins'), loadEndpoint('collections')
       ]);
       const crates = cratesRes.status === 'fulfilled' ? cratesRes.value : [];
       const stickers = stickersRes.status === 'fulfilled' ? stickersRes.value : [];
@@ -405,7 +432,7 @@
       return built;
     }catch(e){
       console.warn('CS2 API fallback:', e);
-      toast('Онлайн-каталог не загрузился — включил встроенный резервный пул. Механики всё равно работают.','warn');
+      toast('Онлайн-каталог не загрузился — включил встроенный резервный пул со старыми кейсами. Механики всё равно работают.','warn');
       return buildOfflineCatalog();
     }
   }
@@ -442,8 +469,8 @@
 
     const preferredCases = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case','Glove Case','Operation Broken Fang Case','Chroma 3 Case','Falchion Case','Shadow Case','Winter Offensive Weapon Case','Gallery Case','Fever Case','Operation Wildfire Case','Operation Vanguard Weapon Case','Huntsman Weapon Case','Operation Phoenix Weapon Case','CS:GO Weapon Case 2','CS:GO Weapon Case 3'];
     const preferredCollections = ['The Graphic Design Collection','The Sport & Field Collection','The Overpass 2024 Collection','The Gallery Collection','The Armory Collection','The Ascent Collection','The Boreal Collection','The Radiant Collection','The Anubis Collection','The 2021 Mirage Collection','The 2021 Dust 2 Collection','The 2021 Vertigo Collection','The Ancient Collection','The Norse Collection','The Canals Collection','The St. Marc Collection','The Cobblestone Collection','The Cache Collection','The Overpass Collection','The Gods and Monsters Collection','The Chop Shop Collection','The Control Collection','The Havoc Collection'];
-    const casesRaw = crates.filter(c => c && c.type === 'Case' && Array.isArray(c.contains) && c.contains.length > 5);
-    const collectionsRaw = crates.filter(c => c && c.type === 'Collection' && Array.isArray(c.contains) && c.contains.length > 5);
+    const casesRaw = crates.filter(c => c && /case/i.test(String(c.type || c.name || '')) && Array.isArray(c.contains) && c.contains.length > 5);
+    const collectionsRaw = crates.filter(c => c && /collection/i.test(String(c.type || c.name || '')) && Array.isArray(c.contains) && c.contains.length > 5);
     const pickedCases = [];
     preferredCases.forEach(n => { const f = casesRaw.find(c => c.name === n); if(f && !pickedCases.includes(f)) pickedCases.push(f); });
     casesRaw.forEach(c => { if(pickedCases.length < 80 && !pickedCases.includes(c)) pickedCases.push(c); });
@@ -457,7 +484,7 @@
       const rawList = [...(c.contains||[]), ...(c.contains_rare||[])];
       const items = remember(rawList.map(raw => apiItem(raw, kind)).filter(Boolean));
       const price = calcPrice(items, idx, kind);
-      return withHiddenOdds({id:(kind==='collection'?'col-':'case-') + (c.id || slug(c.name)), name:c.name, price, image:c.image || svgCase(c.name), items, source:kind==='collection'?'CS2 Collection':'CS2 Case', kind, rareText:c.loot_list && c.loot_list.footer ? c.loot_list.footer : (kind==='collection'?'Коллекция CS2 с реальными названиями предметов.':'Редкий спецпредмет внутри')}, idx);
+      return withHiddenOdds({id:(kind==='collection'?'col-':'case-') + (c.id || slug(c.name)), name:c.name, price, image:fixImageUrl(c.image) || svgCase(c.name), items, source:kind==='collection'?'CS2 Collection':'CS2 Case', kind, rareText:c.loot_list && c.loot_list.footer ? c.loot_list.footer : (kind==='collection'?'Коллекция CS2 с реальными названиями предметов.':'Редкий спецпредмет внутри')}, idx);
     }
     const cases = [];
     pickedCases.forEach((c,idx) => { const mapped = mapCrate(c, idx, 'case'); if(mapped.items.length) cases.push(mapped); });
@@ -486,7 +513,7 @@
       const name = col && (col.name || col.id);
       const pool = byCollection.get(name) || (Array.isArray(col && col.contains) ? col.contains.map(x=>apiItem(x,'skin')).filter(Boolean) : []);
       if(pool && pool.length >= 4){
-        const cc = withHiddenOdds({id:'collection-api-'+slug(name), name, price:calcPrice(pool,idx,'collection'), image:(col.image || svgCase(name)), items:pool, source:'CS2 Collection', kind:'collection', rareText:'Коллекция CS2 / Armory с реальными названиями предметов.'}, cases.length);
+        const cc = withHiddenOdds({id:'collection-api-'+slug(name), name, price:calcPrice(pool,idx,'collection'), image:(fixImageUrl(col.image) || svgCase(name)), items:pool, source:'CS2 Collection', kind:'collection', rareText:'Коллекция CS2 / Armory с реальными названиями предметов.'}, cases.length);
         cases.push(cc);
       }
     });
@@ -566,7 +593,7 @@
   function apiItem(raw, category='skin'){
     if(!raw || !raw.name) return null;
     const r = rarityName(raw, category);
-    const base = applySteamLikePrice({id:raw.id || slug(raw.market_hash_name || raw.name), name:raw.name, rarity:r, rarityColor:rarityColor(raw,r), image:raw.image || svgSkin(raw.name), category, marketHashName:raw.market_hash_name || raw.name, weight:rarityWeight[r] || 7});
+    const base = applySteamLikePrice({id:raw.id || slug(raw.market_hash_name || raw.name), name:raw.name, rarity:r, rarityColor:rarityColor(raw,r), image:fixImageUrl(raw.image) || svgSkin(raw.name), category, marketHashName:raw.market_hash_name || raw.name, weight:rarityWeight[r] || 7});
     return base;
   }
   function rarityName(raw, category){
@@ -717,13 +744,13 @@
   function addLive(user,item){ live.unshift({user,item,value:item.value||0}); live=live.slice(0,18); renderLive(); }
   function renderLive(){
     const root = $('#liveFeed'); if(!root) return;
-    root.innerHTML = live.map(x => `<div class="live-card" style="--rar:${x.item.rarityColor||'#60a5fa'}"><img src="${esc(x.item.image)}" onerror="this.src='${svgSkin('CS2 Skin')}'"><div><b>${esc(x.user)} выбил</b><small>${esc(x.item.name)} · ${fmt(x.value)}</small></div></div>`).join('');
+    root.innerHTML = live.map(x => `<div class="live-card" style="--rar:${x.item.rarityColor||'#60a5fa'}"><img src="${esc(imgSrc(x.item.image, svgSkin('CS2 Skin')))}" onerror="this.src='${svgSkin('CS2 Skin')}'" loading="lazy" referrerpolicy="no-referrer"><div><b>${esc(x.user)} выбил</b><small>${esc(x.item.name)} · ${fmt(x.value)}</small></div></div>`).join('');
   }
 
   function statCards(){ return `<div class="grid cards-4"><div class="stat"><small>Баланс</small><b class="js-balance">${fmt(state.balance)}</b></div><div class="stat"><small>Предметов</small><b>${state.inventory.length}</b></div><div class="stat"><small>Открыто кейсов</small><b>${state.opened}</b></div><div class="stat"><small>Заработано</small><b>${fmt(state.earned)}</b></div></div>`; }
   function itemCard(it, opts={}){
     const buttons = opts.buttons ? `<div class="item-actions">${opts.buttons}</div>` : '';
-    return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}"></div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
+    return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art"><img src="${esc(imgSrc(it.image, svgSkin(it.name||'CS2 Skin')))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}" loading="lazy" referrerpolicy="no-referrer"></div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
   }
   function themeColor(c){
     const key = `${c.id||''} ${c.name||''}`.toLowerCase();
@@ -750,10 +777,11 @@
   }
   function caseVisual(c, big=false){
     const color = themeColor(c);
-    const covers = coverItems(c);
     const classes = big ? 'case-visual big' : 'case-visual';
-    const coverHtml = covers.length ? `<div class="case-cover-items">${covers.map((x,i)=>`<img class="cover-${i}" src="${esc(x.image)}" onerror="this.remove()" alt="${esc(x.name)}">`).join('')}</div>` : '';
-    return `<div class="${classes}" style="--theme:${color}"><img class="case-img ${big?'big':''}" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}">${coverHtml}<span class="case-sheen"></span></div>`;
+    const isClassic = c && (c.kind === 'case' || c.kind === 'collection' || c.source === 'offline-classic');
+    const covers = isClassic ? [] : coverItems(c);
+    const coverHtml = covers.length ? `<div class="case-cover-items">${covers.map((x,i)=>`<img class="cover-${i}" src="${esc(imgSrc(x.image, svgSkin(x.name)))}" onerror="this.remove()" alt="${esc(x.name)}" loading="lazy" referrerpolicy="no-referrer">`).join('')}</div>` : '';
+    return `<div class="${classes} ${isClassic?'classic-case':''}" style="--theme:${color}"><img class="case-img ${big?'big':''}" src="${esc(imgSrc(c.image, svgCase(c.name)))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}" loading="lazy" referrerpolicy="no-referrer">${coverHtml}<span class="case-sheen"></span></div>`;
   }
   function caseCard(c){
     const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
@@ -766,16 +794,20 @@
   }
   function renderCases(){
     const root = $('#casesRoot'); if(!root) return;
-    const is = (...ids) => c => ids.includes(c.id);
+    const classicRx = /Kilowatt|Revolution|Recoil|Dreams|Nightmares|Fracture|Clutch|Prisma|Spectrum|Snakebite|Horizon|Gamma|Danger Zone|CS20|Glove|Broken Fang|Chroma|Falchion|Shadow|Wildfire|Vanguard|Huntsman|Phoenix/i;
+    const classic = catalog.cases.filter(c=>c.kind==='case' && classicRx.test(c.name)).slice(0,24);
+    const classicIds = new Set(classic.map(c=>c.id));
+    const officialRest = catalog.cases.filter(c=>c.kind==='case' && !classicIds.has(c.id));
     const groups = [
-      ['Официальные оружейные кейсы', catalog.cases.filter(c=>c.kind==='case')],
+      ['Классические CS2-кейсы', classic],
+      ['Официальные оружейные кейсы', officialRest],
       ['Коллекции CS2 / Armory Pass', catalog.cases.filter(c=>c.kind==='collection')],
       ['Кейсы по качеству / цвету', catalog.cases.filter(c=>/^quality-/.test(c.id))],
       ['Ножи и перчатки', catalog.cases.filter(c=>/^special-/.test(c.id))],
       ['Турнирные наклейки', catalog.cases.filter(c=>/^stickers-/.test(c.id))],
       ['Агенты, брелоки, нашивки', catalog.cases.filter(c=>/^(agents|charms|patches|collectibles)-/.test(c.id))]
     ];
-    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> добавлены расширенные CS2-пулы: кейсы, коллекции, quality-кейсы, стикеры турниров, агенты, charms/брелоки и patches. Шансы окупа настроены отдельно для каждого кейса и не выводятся в интерфейсе.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
+    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> вернул классическую витрину кейсов и старый визуальный стиль для официальных/коллекционных кейсов. Новые функции сохранены: x3/x5/x10, быстрое открытие, промокоды, quality-пулы, стикеры, агенты, брелоки и нашивки.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
   }
   function openCaseModal(caseId, autoSpin){
     const c = catalog.cases.find(x => x.id === caseId);
@@ -788,9 +820,9 @@
     if(autoSpin) setTimeout(() => spinCase(c.id), 120);
   }
   function caseContentCard(it){
-    return `<article class="content-card" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="content-art"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}"></div><b>${esc(it.name)}</b><small>${esc(it.rarity||'Skin')}</small><span>${fmt(it.value)}</span></article>`;
+    return `<article class="content-card" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="content-art"><img src="${esc(imgSrc(it.image, svgSkin(it.name||'CS2 Skin')))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}" loading="lazy" referrerpolicy="no-referrer"></div><b>${esc(it.name)}</b><small>${esc(it.rarity||'Skin')}</small><span>${fmt(it.value)}</span></article>`;
   }
-  function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'Skin')}'"><b>${esc(it.name)}</b></div>`; }
+  function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(imgSrc(it.image, svgSkin(it.name||'Skin')))}" onerror="this.src='${svgSkin(it.name||'Skin')}'" loading="lazy" referrerpolicy="no-referrer"><b>${esc(it.name)}</b></div>`; }
   function weighted(c){
     const pool = c && c.items && c.items.length ? c.items : fallbackItems;
     const weights = pool.map(it => hiddenCaseWeight(it,c));
@@ -862,7 +894,7 @@
     showDrop(inv, c);
   }
   function showDrop(it,c){
-    $('#dropModalBody').innerHTML = `<div class="drop-box"><p class="kicker">Выпал предмет</p><img class="drop-img" src="${esc(it.image)}" onerror="this.src='${svgSkin(it.name)}'"><h2 style="color:${it.rarityColor||'#fff'}">${esc(it.displayName||it.name)}</h2><p>${esc(it.rarity)} · ${esc(it.wear||'')} · float ${esc(it.float||'')}</p><h3>${fmt(it.value)}</h3><div class="drop-actions"><button class="btn green" data-sell="${esc(it.uid)}">Продать за ${fmt(it.value)}</button><button class="btn" data-close-modal>Оставить</button><button class="btn blue" data-upgrade-item="${esc(it.uid)}">В апгрейд</button><button class="btn" data-contract-item="${esc(it.uid)}">В контракт</button>${c?`<button class="btn primary" data-action="open-again">Открыть ещё</button><button class="btn blue" data-action="open-again-fast">Быстро ещё</button>`:''}</div></div>`;
+    $('#dropModalBody').innerHTML = `<div class="drop-box"><p class="kicker">Выпал предмет</p><img class="drop-img" src="${esc(imgSrc(it.image, svgSkin(it.name)))}" onerror="this.src='${svgSkin(it.name)}'" loading="lazy" referrerpolicy="no-referrer"><h2 style="color:${it.rarityColor||'#fff'}">${esc(it.displayName||it.name)}</h2><p>${esc(it.rarity)} · ${esc(it.wear||'')} · float ${esc(it.float||'')}</p><h3>${fmt(it.value)}</h3><div class="drop-actions"><button class="btn green" data-sell="${esc(it.uid)}">Продать за ${fmt(it.value)}</button><button class="btn" data-close-modal>Оставить</button><button class="btn blue" data-upgrade-item="${esc(it.uid)}">В апгрейд</button><button class="btn" data-contract-item="${esc(it.uid)}">В контракт</button>${c?`<button class="btn primary" data-action="open-again">Открыть ещё</button><button class="btn blue" data-action="open-again-fast">Быстро ещё</button>`:''}</div></div>`;
     openModal('#dropModal');
   }
 
