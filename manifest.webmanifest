@@ -1,9 +1,1 @@
-{
-  "name": "CS2 Case Lab",
-  "short_name": "Case Lab",
-  "start_url": "index.html",
-  "display": "standalone",
-  "background_color": "#090c13",
-  "theme_color": "#090c13",
-  "icons": [{"src":"favicon.svg","sizes":"any","type":"image/svg+xml"}]
-}
+{"name":"CS2 Case Lab","short_name":"Case Lab","start_url":"index.html","display":"standalone","background_color":"#080d18","theme_color":"#090c13","icons":[{"src":"favicon.svg","sizes":"128x128","type":"image/svg+xml"}]}
