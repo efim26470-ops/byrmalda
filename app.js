@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.3.0';
+  const VERSION = '31.4.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -15,9 +15,18 @@
     'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/'
   ];
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
-  const RUB_PER_USD = 74;
-  const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v31-realistic';
+  const RUB_PER_USD = 90;
+  const RUB_PER_EUR = 100;
+  const LC_USD_VALUE = 10;
+  const RUB_PER_LC = RUB_PER_USD * LC_USD_VALUE;
+  const CURRENCY = 'RUB';
+  const PRICE_VERSION = 'market-multi-v31-4';
+  const CURRENCY_OPTIONS = Object.freeze({
+    RUB:{label:'₽', name:'Рубли', rate:1, suffix:'₽', decimals:0},
+    USD:{label:'$', name:'Доллары', rate:RUB_PER_USD, prefix:'$', decimals:2},
+    EUR:{label:'€', name:'Евро', rate:RUB_PER_EUR, suffix:'€', decimals:2},
+    LC:{label:'LC', name:'LC', rate:RUB_PER_LC, suffix:'LC', decimals:2}
+  });
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -36,7 +45,27 @@
   }
   const sample = arr => arr[Math.floor(cryptoRandom() * arr.length)];
   const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-  const fmt = n => `${Math.round(Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('ru-RU')} ${CURRENCY}`;
+  function activeCurrency(){
+    try{
+      const code = String((state && state.currency) || 'RUB').toUpperCase();
+      return CURRENCY_OPTIONS[code] ? code : 'RUB';
+    }catch(e){ return 'RUB'; }
+  }
+  function fmt(n, forcedCurrency){
+    const rub = Number.isFinite(Number(n)) ? Number(n) : 0;
+    const code = CURRENCY_OPTIONS[forcedCurrency] ? forcedCurrency : activeCurrency();
+    const cfg = CURRENCY_OPTIONS[code] || CURRENCY_OPTIONS.RUB;
+    const value = cfg.rate ? rub / cfg.rate : rub;
+    const decimals = cfg.decimals || 0;
+    const abs = Math.abs(value);
+    const digits = decimals ? (abs >= 100 ? 1 : 2) : 0;
+    const num = value.toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:digits});
+    return `${cfg.prefix || ''}${num}${cfg.suffix ? ' ' + cfg.suffix : ''}`;
+  }
+  function currencySelectHtml(){
+    const current = activeCurrency();
+    return `<label class="currency-switch" title="Переключает только отображение цен. Баланс и расчёты хранятся в рублях; 1 LC = $10."><span>Валюта</span><select class="currency-select" aria-label="Валюта">${Object.keys(CURRENCY_OPTIONS).map(code=>`<option value="${code}" ${code===current?'selected':''}>${CURRENCY_OPTIONS[code].label}</option>`).join('')}</select></label>`;
+  }
   function fixImageUrl(url){
     url = String(url || '').trim();
     if(!url) return '';
@@ -166,13 +195,15 @@
   let wheelDeg = 0;
   let currentCase = null;
 
-  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],createdAt:Date.now(),savedAt:Date.now()}; }
   function toNum(v,d=0){ const n = Number(String(v).replace(/\s/g,'').replace(',','.')); return Number.isFinite(n) ? n : d; }
   function normalizeState(raw){
     const base = defaultState();
     const s = Object.assign(base, raw && typeof raw === 'object' ? raw : {});
     s.balance = toNum(s.balance, 15000);
     if(s.balance < 0 || !Number.isFinite(s.balance)) s.balance = 15000;
+    s.currency = String(s.currency || 'RUB').toUpperCase();
+    if(!CURRENCY_OPTIONS[s.currency]) s.currency = 'RUB';
     ['opened','earned','spent','sold','upgrades','contracts','battles','wins'].forEach(k => s[k] = Math.max(0, Math.round(toNum(s[k],0))));
     s.inventory = Array.isArray(s.inventory) ? s.inventory.filter(Boolean).map(normalizeInvItem).filter(Boolean) : [];
     s.tx = Array.isArray(s.tx) ? s.tx.slice(0,60) : [];
@@ -216,7 +247,7 @@
   function compactState(raw){
     const s = normalizeState(raw);
     return {
-      version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,700),
+      version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), currency: s.currency || 'RUB', inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,700),
       opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins,
       tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
       pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[],
@@ -383,7 +414,7 @@
   function spend(amount, reason='Списание'){
     amount = Math.max(0, Math.round(toNum(amount,0)));
     state.balance = Math.round(toNum(state.balance,15000));
-    if(state.balance < amount){ toast(`Недостаточно ₽LC: нужно ${fmt(amount)}, у тебя ${fmt(state.balance)}`,'bad'); save(); return false; }
+    if(state.balance < amount){ toast(`Недостаточно средств: нужно ${fmt(amount)}, у тебя ${fmt(state.balance)}`,'bad'); save(); return false; }
     state.balance -= amount;
     state.spent += amount;
     addTx(reason, -amount);
@@ -527,10 +558,10 @@
     }
   }
   function buildOfflineCatalog(){
-    const stickers = ['Sticker | Natus Vincere | Copenhagen 2024','Sticker | Team Spirit | Shanghai 2024','Sticker | FaZe Clan | Paris 2023','Sticker | G2 Esports | Austin 2025','Sticker | m0NESY | Copenhagen 2024'].map((n,i)=>({id:'offline-sticker-'+i,name:n,rarity:['High Grade','Remarkable','Exotic','Extraordinary'][i%4],rarityColor:rarityColors[['High Grade','Remarkable','Exotic','Extraordinary'][i%4]],value:120+i*180,weight:20-i*3,image:svgSkin(n,'#facc15','#60a5fa'),category:'sticker'}));
+    const stickers = ['Sticker | Natus Vincere | Copenhagen 2024','Sticker | Team Spirit (Holo) | Shanghai 2024','Sticker | FaZe Clan (Glitter) | Paris 2023','Sticker | G2 Esports (Gold) | Austin 2025','Sticker | m0NESY (Holo) | Copenhagen 2024'].map((n,i)=>applySteamLikePrice({id:'offline-sticker-'+i,name:n,rarity:['High Grade','Remarkable','Exotic','Extraordinary','Exotic'][i%5],rarityColor:rarityColors[['High Grade','Remarkable','Exotic','Extraordinary','Exotic'][i%5]],value:120+i*180,weight:20-i*3,image:svgSkin(n,'#facc15','#60a5fa'),category:'sticker'}));
     const agents = ['Sir Bloody Miami Darryl | The Professionals','Cmdr. Mae | SWAT','Number K | The Professionals','Special Agent Ava | FBI'].map((n,i)=>({id:'offline-agent-'+i,name:n,rarity:['Master','Superior','Exceptional','Distinguished'][i%4],rarityColor:rarityColors[['Master','Superior','Exceptional','Distinguished'][i%4]],value:900+i*620,weight:9+i*2,image:svgSkin(n,'#111827','#f59e0b'),category:'agent'}));
-    const charms = ['Charm | Hot Hands','Charm | Baby Karat T','Charm | Lil Squirt','Charm | Chicken Lil'].map((n,i)=>({id:'offline-charm-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:180+i*190,weight:18-i*3,image:svgSkin(n,'#22c55e','#f97316'),category:'keychain'}));
-    const patches = ['Patch | Metal Gold Nova','Patch | Bravo','Patch | Bayonet Frog','Patch | Phoenix'].map((n,i)=>({id:'offline-patch-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:110+i*160,weight:18-i*3,image:svgSkin(n,'#94a3b8','#ef4444'),category:'patch'}));
+    const charms = ['Charm | Hot Hands','Charm | Baby Karat T','Charm | Lil Squirt','Charm | Chicken Lil'].map((n,i)=>applySteamLikePrice({id:'offline-charm-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:180+i*190,weight:18-i*3,image:svgSkin(n,'#22c55e','#f97316'),category:'keychain'}));
+    const patches = ['Patch | Metal Gold Nova','Patch | Bravo','Patch | Bayonet Frog','Patch | Howl'].map((n,i)=>applySteamLikePrice({id:'offline-patch-'+i,name:n,rarity:['High Grade','Remarkable','Exotic','Extraordinary'][i%4],rarityColor:rarityColors[['High Grade','Remarkable','Exotic','Extraordinary'][i%4]],value:110+i*160,weight:18-i*3,image:svgSkin(n,'#94a3b8','#ef4444'),category:'patch'}));
     const items = [...fallbackItems, ...stickers, ...agents, ...charms, ...patches];
     const base = fallbackCases.map((c,i)=>{ const pricedItems = c.items.map(applySteamLikePrice); return withHiddenOdds(Object.assign({}, c, {items:pricedItems, price:calcPrice(pricedItems,i,'case'), profitOdds:.42 + (i%4)*.08}),i); });
     return {items, cases:[...base,
@@ -672,7 +703,7 @@
   }
   function withHiddenOdds(c, idx=0){
     // v31: профили стали заметно жёстче. Симулятор остаётся фановой игрой,
-    // но больше не должен превращать несколько тысяч ₽LC в миллионы за пару открытий.
+    // но больше не должен превращать несколько тысяч рублей в миллионы за пару открытий.
     const profiles = [
       {profitOdds:.62,jackpot:.004,cheap:.72,priceMult:1.35},
       {profitOdds:.68,jackpot:.005,cheap:.66,priceMult:1.28},
@@ -737,7 +768,7 @@
       if(category === 'patch') rub = patchRub(lower, rarity);
       if(category === 'keychain') rub = keychainRub(lower, rarity);
       if(category === 'agent') rub = agentRub(lower, rarity);
-      if(category === 'collectible') rub *= 0.85;
+      if(category === 'collectible') rub = collectibleRub(lower, rarity);
     }
 
     const volatility = knownRub ? 0.08 : 0.34;
@@ -754,6 +785,7 @@
   }
   function knownMarketRub(lower){
     const exact = [
+      ['souvenir package | cobblestone', 320000], ['cobblestone souvenir package', 320000], ['dreamhack 2013 souvenir package', 180000],
       ['awp | dragon lore', 1120000], ['m4a4 | howl', 610000], ['ak-47 | wild lotus', 820000], ['awp | gungnir', 870000], ['awp | medusa', 410000],
       ['awp | desert hydra', 175000], ['awp | the prince', 220000], ['ak-47 | fire serpent', 98000], ['ak-47 | hydroponic', 160000], ['ak-47 | gold arabesque', 145000],
       ['m4a1-s | knight', 155000], ['m4a4 | poseidon', 120000], ['m4a1-s | hot rod', 95000], ['m4a1-s | blue phosphor', 76000], ['m4a1-s | icarus fell', 44000],
@@ -766,66 +798,125 @@
       ['glock-18 | gamma doppler', 2600], ['glock-18 | bullet queen', 1700], ['glock-18 | water elemental', 920], ['glock-18 | vogue', 680], ['glock-18 | moonrise', 240],
       ['p250 | asiimov', 780], ['p250 | see ya later', 650], ['tec-9 | fuel injector', 650], ['tec-9 | isaac', 190], ['five-seven | hyper beast', 1800], ['five-seven | fairy tale', 950],
       ['mp9 | food chain', 680], ['mp9 | starlight protector', 1200], ['mac-10 | neon rider', 1250], ['mac-10 | disco tech', 780], ['p90 | death grip', 380], ['ssg 08 | fever dream', 390], ['ump-45 | primal saber', 680], ['famas | mecha industries', 820], ['galil ar | chatterbox', 520],
-      ['sticker | crown', 43000], ['sticker | howl', 39500], ['katowice 2014', 32000], ['ibuyPower | katowice 2014', 860000], ['titan | katowice 2014', 520000], ['vox eminor | katowice 2014', 92000], ['reason gaming | katowice 2014', 250000], ['dignitas | katowice 2014', 180000]
+      ['sticker | crown', 43000], ['sticker | howl', 39500], ['sticker | donk (holo) | austin 2025', 1030], ['sticker | m0nesy (holo) | austin 2025', 1000], ['sticker | zywoo (gold) | austin 2025', 1190],
+      ['ibuyPower | katowice 2014', 860000], ['titan | katowice 2014', 520000], ['reason gaming | katowice 2014', 250000], ['dignitas | katowice 2014', 180000], ['vox eminor | katowice 2014', 92000], ['katowice 2014', 32000],
+      ['patch | howl', 6200], ['patch | the boss', 5800], ['patch | bayonet frog', 950], ['patch | bravo', 650], ['patch | phoenix', 520],
+      ['copenhagen 2024 viewer pass + 3 souvenir tokens', 2750], ['shanghai 2024 viewer pass + 3 souvenir tokens', 2750], ['austin 2025 viewer pass + 3 souvenir tokens', 2900],
+      ['copenhagen 2024 viewer pass', 920], ['shanghai 2024 viewer pass', 980], ['austin 2025 viewer pass', 1100], ['paris 2023 viewer pass', 760],
+      ['operation riptide pass', 2500], ['operation broken fang pass', 2300], ['operation shattered web pass', 4200], ['operation hydra access pass', 9800]
     ];
     const found = exact.find(([key]) => lower.includes(String(key).toLowerCase()));
-    return found ? found[1] : 0;
+    if(found) return found[1];
+    if(/viewer pass/i.test(lower)) return /souvenir token/.test(lower) ? 2500 : 850;
+    if(/operation .*pass|access pass/i.test(lower)) return 2200;
+    if(/souvenir package/i.test(lower)) return souvenirPackageRub(lower);
+    return 0;
   }
   function knifeRub(lower){
-    let rub = 18000;
-    if(/butterfly/.test(lower)) rub = 95000;
-    else if(/karambit/.test(lower)) rub = 76000;
-    else if(/m9 bayonet/.test(lower)) rub = 56000;
-    else if(/talon/.test(lower)) rub = 39000;
-    else if(/skeleton/.test(lower)) rub = 42000;
-    else if(/bayonet/.test(lower)) rub = 31000;
-    else if(/kukri/.test(lower)) rub = 28000;
-    else if(/stiletto|nomad|ursus|classic/.test(lower)) rub = 23000;
-    else if(/flip|falchion/.test(lower)) rub = 16000;
-    else if(/gut|navaja|shadow daggers/.test(lower)) rub = 9500;
-    if(/emerald|sapphire|ruby|black pearl/.test(lower)) rub *= 2.9;
-    else if(/gamma doppler/.test(lower)) rub *= 1.75;
-    else if(/doppler|fade/.test(lower)) rub *= 1.45;
-    else if(/slaughter|marble fade|tiger tooth/.test(lower)) rub *= 1.25;
-    else if(/crimson web|case hardened/.test(lower)) rub *= 1.18;
+    let rub = 21000;
+    if(/butterfly/.test(lower)) rub = 125000;
+    else if(/karambit/.test(lower)) rub = 92000;
+    else if(/m9 bayonet/.test(lower)) rub = 68000;
+    else if(/skeleton/.test(lower)) rub = 52000;
+    else if(/talon/.test(lower)) rub = 47000;
+    else if(/bayonet/.test(lower)) rub = 38000;
+    else if(/kukri/.test(lower)) rub = 31000;
+    else if(/stiletto|nomad|ursus|classic/.test(lower)) rub = 27000;
+    else if(/paracord|survival/.test(lower)) rub = 23000;
+    else if(/flip|falchion/.test(lower)) rub = 19000;
+    else if(/gut|navaja|shadow daggers/.test(lower)) rub = 11500;
+    if(/emerald|sapphire|ruby|black pearl/.test(lower)) rub *= 3.4;
+    else if(/gamma doppler/.test(lower)) rub *= 1.9;
+    else if(/doppler|fade/.test(lower)) rub *= 1.55;
+    else if(/marble fade|tiger tooth/.test(lower)) rub *= 1.35;
+    else if(/slaughter/.test(lower)) rub *= 1.28;
+    else if(/crimson web|case hardened/.test(lower)) rub *= 1.22;
+    else if(/blue steel|damascus steel|stained/.test(lower)) rub *= .92;
+    else if(/boreal forest|scorched|safari mesh|urban masked/.test(lower)) rub *= .72;
     return rub;
   }
   function glovesRub(lower){
-    let rub = 18000;
-    if(/pandora/.test(lower)) rub = 260000;
-    else if(/vice/.test(lower)) rub = 145000;
-    else if(/hedge maze|superconductor/.test(lower)) rub = 120000;
-    else if(/king snake/.test(lower)) rub = 56000;
-    else if(/imperial plaid/.test(lower)) rub = 42000;
-    else if(/sport gloves/.test(lower)) rub = 52000;
-    else if(/specialist gloves/.test(lower)) rub = 36000;
-    else if(/driver gloves/.test(lower)) rub = 24000;
-    else if(/broken fang|hydra|bloodhound/.test(lower)) rub = 11500;
-    if(/factory new|minimal wear/.test(lower)) rub *= 1.35;
+    let rub = 23000;
+    if(/pandora/.test(lower)) rub = 285000;
+    else if(/vice/.test(lower)) rub = 165000;
+    else if(/hedge maze|superconductor/.test(lower)) rub = 135000;
+    else if(/amphibious|omega/.test(lower)) rub = 78000;
+    else if(/king snake/.test(lower)) rub = 64000;
+    else if(/imperial plaid/.test(lower)) rub = 48000;
+    else if(/sport gloves/.test(lower)) rub = 59000;
+    else if(/specialist gloves/.test(lower)) rub = 41000;
+    else if(/driver gloves/.test(lower)) rub = 27000;
+    else if(/broken fang|hydra|bloodhound/.test(lower)) rub = 13500;
+    if(/factory new/.test(lower)) rub *= 2.1;
+    else if(/minimal wear/.test(lower)) rub *= 1.45;
+    else if(/battle-scarred/.test(lower)) rub *= .82;
     return rub;
   }
   function stickerRub(lower, rarity){
-    let rub = {'High Grade':35,'Remarkable':220,'Exotic':780,'Extraordinary':3600}[rarity] || 80;
-    if(/gold/.test(lower)) rub *= 8.5;
-    if(/holo|lenticular|foil/.test(lower)) rub *= 2.6;
-    if(/katowice 2014/.test(lower)) rub *= 120;
-    if(/copenhagen|shanghai|austin|paris|antwerp|stockholm|rio/.test(lower)) rub *= 1.15;
-    return rub;
+    if(/katowice 2014/.test(lower)) return /ibuyPower|titan|reason gaming|dignitas/i.test(lower) ? 220000 : 36000;
+    if(/cologne 2014|dreamhack 2014|katowice 2015/.test(lower)) return /holo|foil/.test(lower) ? 9000 : 900;
+    const currentMajor = /austin 2025|shanghai 2024|copenhagen 2024|paris 2023|antwerp 2022|stockholm 2021|rio 2022/.test(lower);
+    const star = /donk|m0nesy|monesy|zywoo|s1mple|navi|natus vincere|team spirit|g2 esports|faze clan|vitality|cloud9/.test(lower) ? 1.75 : 1;
+    let rub;
+    if(currentMajor){
+      if(/gold/.test(lower)) rub = 980;
+      else if(/holo|lenticular/.test(lower)) rub = 420;
+      else if(/glitter|foil/.test(lower)) rub = 135;
+      else rub = {'High Grade':45,'Remarkable':110,'Exotic':260,'Extraordinary':780}[rarity] || 60;
+      if(/austin 2025/.test(lower)) rub *= 1.18;
+      if(/champions|winner/.test(lower)) rub *= 1.35;
+      rub *= star;
+    }else{
+      rub = {'High Grade':90,'Remarkable':450,'Exotic':1700,'Extraordinary':6500}[rarity] || 160;
+      if(/gold/.test(lower)) rub *= 3.2;
+      if(/holo|lenticular|foil/.test(lower)) rub *= 2.4;
+      rub *= star;
+    }
+    return clamp(Math.round(rub), 15, 900000);
   }
   function patchRub(lower, rarity){
-    let rub = {'High Grade':30,'Remarkable':130,'Exotic':550,'Extraordinary':1800}[rarity] || 70;
-    if(/gold|bravo|phoenix|howl/.test(lower)) rub *= 2.2;
-    return rub;
+    let rub = {'High Grade':95,'Remarkable':380,'Exotic':1250,'Extraordinary':4200}[rarity] || 180;
+    if(/howl|the boss/.test(lower)) rub = 6000;
+    else if(/bayonet frog/.test(lower)) rub = 950;
+    else if(/bravo|phoenix|vanguard|wildfire|hydra|riptide|broken fang|shattered web/.test(lower)) rub *= 1.8;
+    if(/gold|metal/.test(lower)) rub *= 1.35;
+    return clamp(Math.round(rub), 60, 20000);
   }
   function keychainRub(lower, rarity){
-    let rub = {'High Grade':55,'Remarkable':180,'Exotic':620,'Extraordinary':1900}[rarity] || 110;
-    if(/karat|diamond|hot hands|weapon/.test(lower)) rub *= 1.8;
-    return rub;
+    let rub = {'High Grade':120,'Remarkable':380,'Exotic':1050,'Extraordinary':3200}[rarity] || 220;
+    if(/baby karat|karat|diamond/.test(lower)) rub *= 2.2;
+    if(/hot hands|weapon|semi-precious|chicken lil/.test(lower)) rub *= 1.45;
+    return clamp(Math.round(rub), 80, 18000);
   }
   function agentRub(lower, rarity){
-    let rub = {'Distinguished':320,'Exceptional':850,'Superior':1850,'Master':5200,'Master Agent':5200}[rarity] || 750;
-    if(/darryl|number k|ava|miami|bloody/.test(lower)) rub *= 1.75;
-    return rub;
+    let rub = {'Distinguished':450,'Exceptional':1150,'Superior':2600,'Master':6800,'Master Agent':6800}[rarity] || 900;
+    if(/darryl|number k|ava|miami|bloody|sir bloody|the professionals/.test(lower)) rub *= 1.7;
+    if(/primeiro|royale|elite|doctor/.test(lower)) rub *= 1.35;
+    return clamp(Math.round(rub), 250, 35000);
+  }
+  function souvenirPackageRub(lower){
+    let rub = 950;
+    if(/cobblestone/.test(lower)) rub = 320000;
+    else if(/dragon lore|dreamhack 2013/.test(lower)) rub = 180000;
+    else if(/nuke|inferno|mirage|overpass|vertigo|dust ii|anubis|ancient/.test(lower)) rub = 1100;
+    if(/stockholm 2021|antwerp 2022/.test(lower)) rub *= 1.25;
+    if(/rio 2022/.test(lower)) rub *= 1.05;
+    if(/paris 2023|copenhagen 2024|shanghai 2024|austin 2025/.test(lower)) rub *= 1.15;
+    return Math.round(rub);
+  }
+  function collectibleRub(lower, rarity){
+    if(/viewer pass/.test(lower)) return /souvenir token/.test(lower) ? 2600 : 900;
+    if(/operation .*pass|access pass/.test(lower)) return /hydra/.test(lower) ? 9800 : 2500;
+    if(/souvenir package/.test(lower)) return souvenirPackageRub(lower);
+    if(/sticker capsule|capsule/.test(lower)){
+      let rub = /katowice 2014|cologne 2014/.test(lower) ? 18000 : 80;
+      if(/austin 2025|shanghai 2024|copenhagen 2024/.test(lower)) rub = 115;
+      if(/paris 2023|rio 2022/.test(lower)) rub = 35;
+      return rub;
+    }
+    if(/storage unit/.test(lower)) return 180;
+    if(/name tag/.test(lower)) return 170;
+    return {'Base Grade':140,'High Grade':220,'Remarkable':520,'Exotic':1300,'Extraordinary':3500}[rarity] || 260;
   }
   function stableNoise(str){
     let h=2166136261; str=String(str||'');
@@ -896,6 +987,7 @@
       if(e.target.id === 'targetSearch') renderUpgradeTargets();
     });
     document.addEventListener('change', e => {
+      if(e.target.matches && e.target.matches('.currency-select')){ state.currency = CURRENCY_OPTIONS[e.target.value] ? e.target.value : 'RUB'; save(); route(); return; }
       if(['invRarity','invSort'].includes(e.target.id)) renderInventory();
       if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value; save(); renderUpgrade(); }
       if(e.target.id === 'battleCase' || e.target.id === 'battleMode') renderBattleInfo();
@@ -926,6 +1018,8 @@
   }
   function renderGlobals(){
     state = normalizeState(state);
+    $$('.wallet').forEach(w => { if(!$('.currency-switch', w)) w.insertAdjacentHTML('beforeend', currencySelectHtml()); });
+    $$('.currency-select').forEach(x => { if(x.value !== state.currency) x.value = state.currency; });
     $$('.js-balance').forEach(x => x.textContent = fmt(state.balance));
     $$('.js-inv-count').forEach(x => x.textContent = String(state.inventory.length));
     $$('.js-version').forEach(x => x.textContent = VERSION);
@@ -1006,7 +1100,7 @@
     updateHeroShowcase();
     const root = $('#homeRoot'); if(!root) return;
     const top = [...catalog.items].sort((a,b)=>b.value-a.value).slice(0,8);
-    root.innerHTML = `${statCards()}<section class="block"><div class="head"><div><h2>Популярные кейсы</h2><p>Кнопка «Крутить» сразу открывает модальное окно, списывает баланс и запускает рулетку.</p></div><a class="btn primary" href="cases.html">Все кейсы</a></div><div class="grid case-grid">${catalog.cases.slice(0,6).map(caseCard).join('')}</div></section><section class="block"><div class="head"><div><h2>Редкие дропы</h2><p>Скины из текущего пула CS2.</p></div><a class="btn" href="ads.html">Получить ₽LC</a></div><div class="grid item-grid">${top.map(x=>itemCard(x,{badge:'топ'})).join('')}</div></section>`;
+    root.innerHTML = `${statCards()}<section class="block"><div class="head"><div><h2>Популярные кейсы</h2><p>Кнопка «Крутить» сразу открывает модальное окно, списывает баланс и запускает рулетку.</p></div><a class="btn primary" href="cases.html">Все кейсы</a></div><div class="grid case-grid">${catalog.cases.slice(0,6).map(caseCard).join('')}</div></section><section class="block"><div class="head"><div><h2>Редкие дропы</h2><p>Скины из текущего пула CS2.</p></div><a class="btn" href="ads.html">Получить баланс</a></div><div class="grid item-grid">${top.map(x=>itemCard(x,{badge:'топ'})).join('')}</div></section>`;
   }
 
   function updateHeroShowcase(){
@@ -1210,7 +1304,7 @@
     const avgValue = fullInv.length ? Math.round(fullTotal / fullInv.length) : 0;
     const rarities = [...new Set(fullInv.map(x=>x.rarity).filter(Boolean))].sort((a,b)=>(rarityValue[b]||0)-(rarityValue[a]||0));
     if(controls){
-      controls.innerHTML = `<div class="inventory-topline"><div class="inv-total-card"><small>Стоимость инвентаря</small><b>${fmt(fullTotal)}</b><span>${fullInv.length} предметов · среднее ${fmt(avgValue)}</span></div><div class="inv-total-actions"><button class="btn green" data-action="sell-all-inventory" ${fullInv.length?'':'disabled'}>Продать всё</button><button class="small-btn" data-action="sell-cheap" ${fullInv.length?'':'disabled'}>Продать дешевле 200 ₽LC</button></div></div><div class="filters"><input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select></div>`;
+      controls.innerHTML = `<div class="inventory-topline"><div class="inv-total-card"><small>Стоимость инвентаря</small><b>${fmt(fullTotal)}</b><span>${fullInv.length} предметов · среднее ${fmt(avgValue)}</span></div><div class="inv-total-actions"><button class="btn green" data-action="sell-all-inventory" ${fullInv.length?'':'disabled'}>Продать всё</button><button class="small-btn" data-action="sell-cheap" ${fullInv.length?'':'disabled'}>Продать дешевле ${fmt(200)}</button></div></div><div class="filters"><input id="invSearch" placeholder="Поиск по названию" value="${esc(prevQ)}"><select id="invRarity"><option value="all">Все редкости</option>${rarities.map(x=>`<option value="${esc(x)}" ${prevR===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="invSort"><option value="new" ${prevS==='new'?'selected':''}>Сначала новые</option><option value="valueDesc" ${prevS==='valueDesc'?'selected':''}>Сначала дорогие</option><option value="valueAsc" ${prevS==='valueAsc'?'selected':''}>Сначала дешёвые</option><option value="rarity" ${prevS==='rarity'?'selected':''}>По редкости</option></select></div>`;
     }
     const q = ($('#invSearch') && $('#invSearch').value || prevQ).toLowerCase().trim();
     const r = $('#invRarity') ? $('#invRarity').value : prevR;
@@ -1237,7 +1331,7 @@
   }
   function sellCheap(){
     const cheap = state.inventory.filter(x => x.value < 200);
-    if(!cheap.length) return toast('Нет предметов дешевле 200 ₽LC','warn');
+    if(!cheap.length) return toast(`Нет предметов дешевле ${fmt(200)}`,'warn');
     const total = cheap.reduce((s,x)=>s+x.value,0);
     removeItems(cheap.map(x=>x.uid));
     state.sold += total;
@@ -1338,7 +1432,7 @@
   function renderWheel(){
     const root = $('#wheelRoot'); if(!root) return;
     const left = cooldownLeft();
-    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel" ${left?'disabled':''}>${left?'Доступно через '+formatTime(left):'Крутить бонусное колесо'}</button><div class="notice">Лимит: 1 прокрутка в 2 часа. После остановки сразу начисляет ₽LC или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
+    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel" ${left?'disabled':''}>${left?'Доступно через '+formatTime(left):'Крутить бонусное колесо'}</button><div class="notice">Лимит: 1 прокрутка в 2 часа. После остановки сразу начисляет баланс или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
     if(left) setTimeout(renderWheel, Math.min(left, 1000));
   }
   function spinWheel(){
@@ -1349,7 +1443,7 @@
     state.lastWheelAt = Date.now(); save();
     const btn = $('[data-action="spin-wheel"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
     const rewards = [
-      ['+250 ₽LC','coins',250],['+500 ₽LC','coins',500],['+750 ₽LC','coins',750],['+1 000 ₽LC','coins',1000],['+2 500 ₽LC','coins',2500],['Промо +1 500 ₽LC','coins',1500],['Случайный скин','item',0],['Редкий скин','rare',0]
+      [`+${fmt(250)}`,'coins',250],[`+${fmt(500)}`,'coins',500],[`+${fmt(750)}`,'coins',750],[`+${fmt(1000)}`,'coins',1000],[`+${fmt(2500)}`,'coins',2500],[`Промо +${fmt(1500)}`,'coins',1500],['Случайный скин','item',0],['Редкий скин','rare',0]
     ];
     const idx = Math.floor(cryptoRandom()*rewards.length);
     wheelDeg += 360*6 + (360 - idx*45) + rnd(8,35);
@@ -1729,7 +1823,7 @@
     const root = $('#promosRoot'); if(!root) return;
     const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
     const totalCodes = Object.keys(PROMO_CODES).length;
-    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Валюта сразу начисляется на баланс в ₽LC.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME30</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
+    root.innerHTML = `<div class="promo-layout"><article class="panel promo-card"><span class="kicker">Промокоды</span><h2>Активировать бонус</h2><p>Промокод можно использовать один раз на одно сохранение. Бонус сразу начисляется на баланс. Валюту отображения можно переключить в шапке.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${totalCodes}. Пример формата: <b>WELCOME30</b></p></article><article class="panel"><h3>История промокодов</h3><div class="promo-used">${used.length ? used.map(x=>`<span class="pill">${esc(x)}</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>'}</div></article></div>`;
   }
   function redeemPromo(){
     const input = $('#promoInput');
@@ -1757,10 +1851,10 @@
   }
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 ₽LC. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает ${fmt(15000)}. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
-    if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 ₽LC?')) return;
+    if(!confirm(`Сбросить прогресс и вернуть стартовый баланс ${fmt(15000)}?`)) return;
     try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); localStorage.removeItem(LS_KEY); }catch(e){}
     try{ sessionStorage.removeItem(BACKUP_KEY); }catch(e){}
     try{ if(String(window.name||'').startsWith(WINDOW_SAVE_PREFIX)) window.name=''; }catch(e){}
