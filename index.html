@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f1f" />
+  <meta name="description" content="CS2 Case Lab — фан-симулятор открытия кейсов, апгрейда и бонусов для GitHub Pages." />
+  <title>CS2 Case Lab — Case Opening Simulator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="topbar">
+    <a class="brand" href="#home" aria-label="На главную">
+      <span class="brand-mark">CL</span>
+      <span><b>CS2 Case Lab</b><small>fan simulator</small></span>
+    </a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="#cases">Кейсы</a>
+      <a href="#inventory">Инвентарь</a>
+      <a href="#upgrade">Апгрейд</a>
+      <a href="#bonus">Бонусы</a>
+      <a href="#projects">Реклама</a>
+    </nav>
+    <div class="wallet" title="Внутренняя валюта симулятора">
+      <span class="coin">◆</span>
+      <strong id="balance">0</strong>
+      <span>LabCoins</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="home" class="hero panel">
+      <div class="hero-copy">
+        <span class="eyebrow">GitHub Pages ready • без сервера • localStorage</span>
+        <h1>Открывай кейсы, крути бонусы и апгрейдь дропы в фан-среде CS2.</h1>
+        <p>
+          Это полностью статический симулятор. Здесь нет реальных депозитов, вывода скинов,
+          Steam-логина и азартной игры на деньги — только внутриигровая валюта и локальный прогресс.
+        </p>
+        <div class="hero-actions">
+          <button class="primary" data-scroll="#cases">Открыть кейс</button>
+          <button class="ghost" data-scroll="#bonus">Получить монеты</button>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="case-3d">
+          <div class="case-lid"></div>
+          <div class="case-body">CS2</div>
+          <div class="case-glow"></div>
+        </div>
+        <div class="stats-grid">
+          <div><b id="openedCount">0</b><span>кейсов открыто</span></div>
+          <div><b id="inventoryValue">0</b><span>стоимость инвентаря</span></div>
+          <div><b id="bestDrop">—</b><span>лучший дроп</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cases" class="section">
+      <div class="section-head">
+        <span class="eyebrow">Разный пул кейсов</span>
+        <h2>Кейсы</h2>
+        <p>У каждого кейса свой набор предметов, цена и шанс редкости.</p>
+      </div>
+      <div id="caseGrid" class="case-grid"></div>
+    </section>
+
+    <section class="opener panel" aria-live="polite">
+      <div class="opener-head">
+        <div>
+          <span class="eyebrow">Case roller</span>
+          <h2 id="selectedCaseName">Выбери кейс</h2>
+        </div>
+        <button id="openCaseBtn" class="primary" disabled>Открыть</button>
+      </div>
+      <div class="roulette-window">
+        <div id="rouletteStrip" class="roulette-strip"></div>
+        <div class="marker"></div>
+      </div>
+      <div id="dropResult" class="drop-result hidden"></div>
+    </section>
+
+    <section id="inventory" class="section">
+      <div class="section-head row">
+        <div>
+          <span class="eyebrow">Drops</span>
+          <h2>Инвентарь</h2>
+          <p>Предметы можно продать за LabCoins или использовать в апгрейде.</p>
+        </div>
+        <button id="sellAllBtn" class="ghost">Продать всё</button>
+      </div>
+      <div id="inventoryGrid" class="inventory-grid empty"></div>
+    </section>
+
+    <section id="upgrade" class="section panel upgrade-panel">
+      <div class="section-head">
+        <span class="eyebrow">Upgrader</span>
+        <h2>Апгрейд предмета</h2>
+        <p>Выбери предмет из инвентаря и цель. Чем дороже цель — тем ниже шанс.</p>
+      </div>
+      <div class="upgrade-layout">
+        <div>
+          <label for="upgradeItem">Твой предмет</label>
+          <select id="upgradeItem"></select>
+        </div>
+        <div>
+          <label for="targetItem">Цель апгрейда</label>
+          <select id="targetItem"></select>
+        </div>
+        <div class="chance-card">
+          <span>Шанс</span>
+          <b id="upgradeChance">0%</b>
+        </div>
+        <button id="upgradeBtn" class="primary">Апгрейд</button>
+      </div>
+      <div class="upgrade-meter"><span id="upgradeMeter"></span></div>
+      <div id="upgradeResult" class="mini-result"></div>
+    </section>
+
+    <section id="bonus" class="section bonus-layout">
+      <div class="panel wheel-panel">
+        <div class="section-head">
+          <span class="eyebrow">Daily wheel</span>
+          <h2>Колесо бонусов</h2>
+          <p>Крути колесо и получай монеты. Кулдаун можно менять в коде.</p>
+        </div>
+        <div class="wheel-wrap">
+          <div class="wheel-pointer"></div>
+          <div id="bonusWheel" class="wheel"></div>
+        </div>
+        <button id="spinBtn" class="primary">Крутить колесо</button>
+        <div id="wheelResult" class="mini-result"></div>
+      </div>
+
+      <div class="panel ad-panel">
+        <div class="section-head">
+          <span class="eyebrow">Reward ads</span>
+          <h2>Монеты за рекламу</h2>
+          <p>Показывается полноэкранный блок с твоими проектами на 10 секунд, затем начисляются монеты.</p>
+        </div>
+        <button id="watchAdBtn" class="primary">Смотреть рекламу +250</button>
+        <div class="ad-preview">
+          <b>Твои проекты</b>
+          <span>портфолио • пасьянс • сайт ЧМ • учебные работы</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="projects" class="section">
+      <div class="section-head">
+        <span class="eyebrow">Встроенная реклама твоих проектов</span>
+        <h2>Проекты для рекламного окна</h2>
+        <p>Замени ссылки в `script.js` на свои GitHub Pages / YouTube / Яндекс.Диск.</p>
+      </div>
+      <div id="projectGrid" class="project-grid"></div>
+    </section>
+  </main>
+
+  <div id="adOverlay" class="ad-overlay hidden" role="dialog" aria-modal="true" aria-label="Рекламный просмотр">
+    <div class="ad-box">
+      <div class="ad-timer"><span id="adTimer">10</span></div>
+      <h2>Поддержи проекты автора</h2>
+      <p>Через несколько секунд ты получишь бонусные LabCoins.</p>
+      <div id="adProject" class="ad-project"></div>
+      <button id="closeAdBtn" class="primary" disabled>Получить награду</button>
+    </div>
+  </div>
+
+  <footer>
+    <p>CS2 Case Lab — фан-проект. Не связан с Valve, Counter-Strike, Steam или реальными skin-сервисами.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
