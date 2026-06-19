@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.6.0';
+  const VERSION = '31.7.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -20,7 +20,7 @@
   const LC_USD_VALUE = 10;
   const RUB_PER_LC = RUB_PER_USD * LC_USD_VALUE;
   const CURRENCY = 'RUB';
-  const PRICE_VERSION = 'market-multi-v31-6';
+  const PRICE_VERSION = 'market-multi-v31-7';
   const CURRENCY_OPTIONS = Object.freeze({
     RUB:{label:'₽', name:'Рубли', rate:1, suffix:'₽', decimals:0},
     USD:{label:'$', name:'Доллары', rate:RUB_PER_USD, prefix:'$', decimals:2},
@@ -200,8 +200,9 @@
   let live = [];
   let wheelDeg = 0;
   let currentCase = null;
+  let upgradeMode = 2;
 
-  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,mines:0,minesWins:0,tx:[],pendingUpgrade:null,upgradeMode:2,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),minesGame:null,createdAt:Date.now(),savedAt:Date.now()}; }
   function defaultBattlePass(){ return {active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
   function defaultSeasonalPass(){ return {seasonId:SEASONAL_PASS_SEASON_ID,seasonStartedAt:Date.now(),active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
   function normalizeSeasonalPass(sp, fallbackStart){
@@ -238,6 +239,13 @@
     out.vouchers = Array.isArray(out.vouchers) ? out.vouchers.slice(0,80) : [];
     return out;
   }
+  function normalizeMinesGame(g){
+    if(!g || typeof g !== 'object' || !g.active || !g.stakeUid) return null;
+    const cells = Array.isArray(g.cells) ? g.cells.map(x=>Math.round(toNum(x,-1))).filter(x=>x>=0&&x<25).slice(0,24) : [];
+    const revealed = Array.isArray(g.revealed) ? Array.from(new Set(g.revealed.map(x=>Math.round(toNum(x,-1))).filter(x=>x>=0&&x<25))).slice(0,24) : [];
+    const mineCount = clamp(Math.round(toNum(g.mineCount,5)),3,10);
+    return {active:true, stakeUid:String(g.stakeUid), mineCount, cells:Array.from(new Set(cells)).slice(0,mineCount), revealed, startedAt:Math.max(0,Math.round(toNum(g.startedAt,Date.now()))), lostCell:Number.isFinite(Number(g.lostCell))?Math.round(Number(g.lostCell)):null, finished:!!g.finished};
+  }
   function toNum(v,d=0){ const n = Number(String(v).replace(/\s/g,'').replace(',','.')); return Number.isFinite(n) ? n : d; }
   function normalizeState(raw){
     const base = defaultState();
@@ -246,7 +254,10 @@
     if(s.balance < 0 || !Number.isFinite(s.balance)) s.balance = 15000;
     s.currency = String(s.currency || 'RUB').toUpperCase();
     if(!CURRENCY_OPTIONS[s.currency]) s.currency = 'RUB';
-    ['opened','earned','spent','sold','upgrades','contracts','battles','wins'].forEach(k => s[k] = Math.max(0, Math.round(toNum(s[k],0))));
+    ['opened','earned','spent','sold','upgrades','contracts','battles','wins','mines','minesWins'].forEach(k => s[k] = Math.max(0, Math.round(toNum(s[k],0))));
+    s.upgradeMode = clamp(Math.round(toNum(s.upgradeMode,2)),2,10);
+    if(![2,3,5,10].includes(s.upgradeMode)) s.upgradeMode = 2;
+    s.minesGame = normalizeMinesGame(s.minesGame);
     s.inventory = Array.isArray(s.inventory) ? s.inventory.filter(Boolean).map(normalizeInvItem).filter(Boolean) : [];
     s.tx = Array.isArray(s.tx) ? s.tx.slice(0,60) : [];
     s.contractSelected = Array.isArray(s.contractSelected) ? s.contractSelected : [];
@@ -292,9 +303,9 @@
     const s = normalizeState(raw);
     return {
       version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), currency: s.currency || 'RUB', inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,700),
-      opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins,
+      opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins, mines:s.mines, minesWins:s.minesWins,
       tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
-      pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[],
+      pendingUpgrade:s.pendingUpgrade||null, upgradeMode:s.upgradeMode||2, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[], minesGame:normalizeMinesGame(s.minesGame),
       battlePass:normalizeBattlePass(s.battlePass), seasonalPass:normalizeSeasonalPass(s.seasonalPass, s.createdAt||Date.now()), createdAt:s.createdAt||Date.now(), savedAt:Date.now()
     };
   }
@@ -481,6 +492,7 @@
     state.inventory = state.inventory.filter(x => !set.has(x.uid));
     state.contractSelected = (state.contractSelected||[]).filter(x => !set.has(x));
     if(set.has(state.pendingUpgrade)) state.pendingUpgrade = null;
+    if(state.minesGame && set.has(state.minesGame.stakeUid)) state.minesGame = null;
     save();
   }
   function sellItem(uid){
@@ -1021,7 +1033,12 @@
       if(a === 'start-battle') return startBattle();
       if(a === 'make-contract') return makeContract();
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return; }
+      if(a === 'set-upgrade-mult'){ state.upgradeMode = clamp(Math.round(toNum(btn.dataset.mult,2)),2,10); if(![2,3,5,10].includes(state.upgradeMode)) state.upgradeMode=2; save(); renderUpgrade(); return; }
       if(a === 'do-upgrade') return doUpgrade();
+      if(a === 'start-mines') return startMines();
+      if(a === 'mines-cell') return revealMinesCell(btn.dataset.cell);
+      if(a === 'cashout-mines') return cashoutMines();
+      if(a === 'cancel-mines') return cancelMinesGame();
       if(a === 'sell-cheap') return sellCheap();
       if(a === 'sell-all-inventory') return sellAllInventory();
       if(a === 'reset-save') return resetSave();
@@ -1033,12 +1050,13 @@
     });
     document.addEventListener('input', e => {
       if(['invSearch','invRarity','invSort'].includes(e.target.id)) renderInventory();
-      if(e.target.id === 'targetSearch') renderUpgradeTargets();
+      if(e.target.id === 'targetSearch' || e.target.id === 'upgradeBalanceAmount') renderUpgradeTargets();
     });
     document.addEventListener('change', e => {
       if(e.target.matches && e.target.matches('.currency-select')){ state.currency = CURRENCY_OPTIONS[e.target.value] ? e.target.value : 'RUB'; save(); route(); return; }
       if(['invRarity','invSort'].includes(e.target.id)) renderInventory();
-      if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value; save(); renderUpgrade(); }
+      if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value === '__BALANCE__' ? null : e.target.value; save(); renderUpgrade(); }
+      if(e.target.id === 'minesStake' || e.target.id === 'minesCount') renderMinesInfo();
       if(e.target.id === 'battleCase' || e.target.id === 'battleMode') renderBattleInfo();
     });
     document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); if(e.key === 'Enter' && e.target && e.target.id === 'promoInput') redeemPromo(); });
@@ -1056,6 +1074,7 @@
     if(page === 'contracts') return renderContracts();
     if(page === 'wheel') return renderWheel();
     if(page === 'battle') return renderBattle();
+    if(page === 'mines') return renderMines();
     if(page === 'battle-pass') return renderBattlePass();
     if(page === 'seasonal-pass') return renderSeasonalPass();
     if(page === 'ads') return renderAds();
@@ -1112,9 +1131,15 @@
   }
 
   function statCards(){ return `<div class="grid cards-4"><div class="stat"><small>Баланс</small><b class="js-balance">${fmt(state.balance)}</b></div><div class="stat"><small>Предметов</small><b>${state.inventory.length}</b></div><div class="stat"><small>Открыто кейсов</small><b>${state.opened}</b></div><div class="stat"><small>Заработано</small><b>${fmt(state.earned)}</b></div></div>`; }
+  function itemImageOrPlaceholder(it, label='ITEM'){
+    const html = imgTag(it && it.image, it && (it.displayName || it.name));
+    if(html) return html;
+    const text = String((it && (it.displayName || it.name)) || label).split('|').pop().trim().slice(0,18) || label;
+    return `<div class="item-no-image"><b>${esc(label)}</b><span>${esc(text)}</span></div>`;
+  }
   function itemCard(it, opts={}){
     const buttons = opts.buttons ? `<div class="item-actions">${opts.buttons}</div>` : '';
-    return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art">${imgTag(it.image, it.name)}</div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
+    return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art">${itemImageOrPlaceholder(it)}</div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
   }
   function themeColor(c){
     const key = `${c.id||''} ${c.name||''}`.toLowerCase();
@@ -1215,9 +1240,9 @@
     if(autoSpin) setTimeout(() => spinCase(c.id), 120);
   }
   function caseContentCard(it){
-    return `<article class="content-card" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="content-art">${imgTag(it.image, it.name)}</div><b>${esc(it.name)}</b><small>${esc(it.rarity||'Skin')}</small><span>${fmt(it.value)}</span></article>`;
+    return `<article class="content-card" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="content-art">${itemImageOrPlaceholder(it,'CS2')}</div><b>${esc(it.name)}</b><small>${esc(it.rarity||'Skin')}</small><span>${fmt(it.value)}</span></article>`;
   }
-  function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}">${imgTag(it.image, it.name)}<b>${esc(it.name)}</b></div>`; }
+  function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}">${itemImageOrPlaceholder(it,'CS2')}<b>${esc(it.name)}</b></div>`; }
   function weighted(c){
     const pool = c && c.items && c.items.length ? c.items : fallbackItems;
     const weights = pool.map(it => hiddenCaseWeight(it,c));
@@ -1408,50 +1433,94 @@
   }
 
   let currentTarget = null;
+  function selectedUpgradeSource(){
+    const sel = $('#upgradeSource');
+    const uid = sel ? sel.value : (state.pendingUpgrade || '');
+    if(!uid || uid === '__BALANCE__') return null;
+    return state.inventory.find(x=>x.uid===uid) || null;
+  }
+  function upgradeBalanceAmount(){
+    const el = $('#upgradeBalanceAmount');
+    const n = Math.max(0, Math.round(toNum(el ? el.value : 0, 0)));
+    return clamp(n, 0, Math.max(0, Math.round(toNum(state.balance,0))));
+  }
+  function upgradeInputValue(){
+    const src = selectedUpgradeSource();
+    return Math.max(0, Math.round((src ? toNum(src.value,0) : 0) + upgradeBalanceAmount()));
+  }
+  function upgradeTargetMultiplier(){
+    const m = clamp(Math.round(toNum(state.upgradeMode || upgradeMode || 2,2)),2,10);
+    return [2,3,5,10].includes(m) ? m : 2;
+  }
+  function pickItemForValue(targetValue, q=''){
+    q = String(q||'').toLowerCase();
+    let pool = catalog.items.filter(x => x && toNum(x.value,0) > 0 && realImageUrl(x.image));
+    if(!pool.length) pool = catalog.items.filter(x => x && toNum(x.value,0) > 0);
+    if(q) pool = pool.filter(x => String(x.name||'').toLowerCase().includes(q));
+    if(!pool.length) pool = catalog.items;
+    return [...pool].sort((a,b)=>Math.abs(toNum(a.value,0)-targetValue)-Math.abs(toNum(b.value,0)-targetValue))[0] || fallbackItems[0];
+  }
   function renderUpgrade(){
     const root = $('#upgradeRoot'); if(!root) return;
-    const selected = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
-    if(selected) state.pendingUpgrade = selected.uid;
-    const options = state.inventory.map(x=>`<option value="${esc(x.uid)}" ${selected&&selected.uid===x.uid?'selected':''}>${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
-    root.innerHTML = `<div class="upgrade-layout"><aside class="panel"><h3>Твой предмет</h3>${selected?itemCard(selected):'<div class="empty">Нет предмета</div>'}<select id="upgradeSource">${options}</select><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade" ${selected?'':'disabled'}>Апгрейд</button><p class="small">При проигрыше предмет исчезает. Это локальный фан-симулятор.</p></aside><section><div class="upgrade-roulette" id="upgradeRoulette"><div class="upgrade-arrow"></div><div class="upgrade-lane" id="upgradeLane"><span class="zone lose">LOSE</span><span class="zone win">WIN</span><span class="zone lose">LOSE</span></div></div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
+    upgradeMode = upgradeTargetMultiplier();
+    const inv = [...state.inventory].sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
+    const selected = state.pendingUpgrade ? inv.find(x=>x.uid===state.pendingUpgrade) : null;
+    const sourceValue = selected ? selected.uid : '__BALANCE__';
+    const balanceDefault = selected ? 0 : Math.min(Math.round(toNum(state.balance,0)), 1000);
+    const options = `<option value="__BALANCE__" ${!selected?'selected':''}>Баланс без скина</option>` + inv.map(x=>`<option value="${esc(x.uid)}" ${sourceValue===x.uid?'selected':''}>${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
+    root.innerHTML = `<div class="upgrade-layout upgrade-layout-pro"><aside class="panel upgrade-sidebar"><span class="kicker">Upgrade 2.0</span><h3>Ставка</h3><label class="field-label">Источник</label><select id="upgradeSource">${options}</select><div id="upgradeSourcePreview">${selected?itemCard(selected):'<div class="empty">Можно апгрейдить только балансом — без скина.</div>'}</div><label class="field-label">Добавить с баланса</label><input id="upgradeBalanceAmount" type="number" min="0" step="50" value="${balanceDefault}" placeholder="Сумма доплаты"><div class="upgrade-tabs" role="tablist"><button class="small-btn ${upgradeMode===2?'active':''}" data-action="set-upgrade-mult" data-mult="2">2x</button><button class="small-btn ${upgradeMode===3?'active':''}" data-action="set-upgrade-mult" data-mult="3">3x</button><button class="small-btn ${upgradeMode===5?'active':''}" data-action="set-upgrade-mult" data-mult="5">5x</button><button class="small-btn ${upgradeMode===10?'active':''}" data-action="set-upgrade-mult" data-mult="10">10x</button></div><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade">Апгрейд</button><p class="small">При проигрыше сгорает выбранный скин и/или списанная сумма. При победе выдаётся автоматически подобранная вещь из подходящего ценового диапазона.</p></aside><section><div class="upgrade-roulette" id="upgradeRoulette"><div class="upgrade-arrow"></div><div class="upgrade-lane" id="upgradeLane"><span class="zone lose">LOSE</span><span class="zone win">WIN</span><span class="zone lose">LOSE</span></div></div><div class="notice"><b>Автоподбор:</b> выбери 2x / 3x / 5x / 10x — список ниже сам подберёт цели примерно под сумму ставки × множитель.</div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
     renderUpgradeTargets();
   }
   function renderUpgradeTargets(){
-    const selected = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
     const q = ($('#targetSearch') && $('#targetSearch').value || '').toLowerCase();
-    let targets = catalog.items.filter(x => !selected || x.value > selected.value * 1.15);
-    if(q) targets = targets.filter(x => x.name.toLowerCase().includes(q));
-    targets = targets.sort((a,b)=>a.value-b.value).slice(0,60);
-    currentTarget = targets[0] || null;
+    const input = upgradeInputValue();
+    const mult = upgradeTargetMultiplier();
+    const targetValue = Math.max(1, input * mult);
+    let pool = catalog.items.filter(x => x && toNum(x.value,0) >= Math.max(1,targetValue*.72) && toNum(x.value,0) <= targetValue*1.55);
+    if(q) pool = pool.filter(x => String(x.name||'').toLowerCase().includes(q));
+    if(pool.length < 8){
+      let wider = catalog.items.filter(x => x && toNum(x.value,0) >= Math.max(1,targetValue*.45) && toNum(x.value,0) <= targetValue*2.2);
+      if(q) wider = wider.filter(x => String(x.name||'').toLowerCase().includes(q));
+      pool = wider;
+    }
+    pool = [...pool].sort((a,b)=>Math.abs(toNum(a.value,0)-targetValue)-Math.abs(toNum(b.value,0)-targetValue)).slice(0,60);
+    currentTarget = pool[0] || null;
     const box = $('#upgradeTargets'); if(!box) return;
-    box.innerHTML = targets.map((x,i)=>itemCard(x,{selected:i===0,badge:'цель'})).join('') || '<div class="empty">Целей дороже текущего предмета не найдено.</div>';
+    box.innerHTML = pool.map((x,i)=>itemCard(x,{selected:i===0,badge:i===0?'автоцель':'цель'})).join('') || '<div class="empty">Целей под такой множитель не найдено. Увеличь ставку или измени поиск.</div>';
     $$('#upgradeTargets .item-card').forEach((card,i)=>card.addEventListener('click',()=>{
       $$('#upgradeTargets .item-card').forEach(c=>c.classList.remove('selected'));
-      card.classList.add('selected'); currentTarget = targets[i]; updateUpgradeChance();
+      card.classList.add('selected'); currentTarget = pool[i]; updateUpgradeChance();
     }));
     updateUpgradeChance();
   }
-  function chance(src,tgt){
-    if(!src || !tgt) return 0;
-    const ratio = toNum(src.value,0) / Math.max(1, toNum(tgt.value,1));
-    // House-edge upgrade formula: чем дороже цель, тем ниже шанс. Максимум урезан, чтобы апгрейд не превращался в постоянную победу.
+  function chance(srcOrValue,tgt){
+    const input = typeof srcOrValue === 'number' ? srcOrValue : (srcOrValue ? toNum(srcOrValue.value,0) : upgradeInputValue());
+    if(!input || !tgt) return 0;
+    const ratio = input / Math.max(1, toNum(tgt.value,1));
     return clamp(ratio * 67, 0.35, 58);
   }
   function updateUpgradeChance(){
-    const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
-    const ch = chance(src,currentTarget);
+    const input = upgradeInputValue();
+    const src = selectedUpgradeSource();
+    const add = upgradeBalanceAmount();
+    const ch = chance(input,currentTarget);
     const el = $('#upgradeChance');
-    if(el) el.innerHTML = src && currentTarget ? `<p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '';
+    if(el) el.innerHTML = input && currentTarget ? `<div class="upgrade-summary"><p>Ставка: <b>${fmt(input)}</b> ${src?`<span>скин ${fmt(src.value)}</span>`:''} ${add?`<span>+ баланс ${fmt(add)}</span>`:''}</p><p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p></div><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '<p class="small">Укажи сумму или выбери скин, чтобы увидеть шанс.</p>';
     const win = $('#upgradeLane .win'); if(win) win.style.width = `${clamp(ch,4,76)}%`;
   }
   function doUpgrade(){
     if(busy.upgrade) return toast('Апгрейд уже крутится','warn');
-    const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0];
+    const src = selectedUpgradeSource();
+    const add = upgradeBalanceAmount();
+    const input = Math.round((src ? toNum(src.value,0) : 0) + add);
     const tgt = currentTarget;
-    if(!src || !tgt) return toast('Выбери предмет и цель','bad');
-    const ch = chance(src,tgt);
+    if(input <= 0) return toast('Выбери скин или сумму с баланса','bad');
+    if(add > toNum(state.balance,0)) return toast('Недостаточно баланса для доплаты','bad');
+    if(!tgt) return toast('Цель не найдена','bad');
+    const ch = chance(input,tgt);
     busy.upgrade = true;
     const btn = $('[data-action="do-upgrade"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
+    if(add > 0 && !spend(add, src ? 'Доплата к апгрейду' : 'Апгрейд за баланс')){ busy.upgrade=false; if(btn){btn.disabled=false; btn.textContent='Апгрейд';} return; }
     const lane = $('#upgradeLane');
     const success = cryptoRandom() < (ch / 100);
     const winStart = 50 - ch/2;
@@ -1462,9 +1531,10 @@
       requestAnimationFrame(()=>{ lane.style.transition='transform 3.6s cubic-bezier(.08,.75,.08,1)'; lane.style.transform=`translateX(calc(-${stopPercent}% + 50%))`; });
     }
     setTimeout(()=>{
-      removeItems(src.uid); state.upgrades += 1;
+      if(src) removeItems(src.uid);
+      state.upgrades += 1;
       if(success){ const win = addItem(tgt,'upgrade'); state.pendingUpgrade=win.uid; addLive('Ты',win); toast(`Апгрейд успешен: ${win.displayName}`,'good'); showDrop(win,null); }
-      else{ state.pendingUpgrade=null; toast('Апгрейд не прошёл, предмет сгорел','bad'); }
+      else{ state.pendingUpgrade=null; toast('Апгрейд не прошёл: ставка сгорела','bad'); }
       bpEvent('upgrade', {success});
       busy.upgrade=false; save(); renderUpgrade();
     }, 3900);
@@ -1563,6 +1633,94 @@
       }
     },1000);
   }
+
+  function minesActiveGame(){ state.minesGame = normalizeMinesGame(state.minesGame); return state.minesGame; }
+  function minesMultiplier(mineCount, revealedCount){
+    mineCount = clamp(Math.round(toNum(mineCount,5)),3,10);
+    revealedCount = clamp(Math.round(toNum(revealedCount,0)),0,25-mineCount);
+    let prob = 1;
+    for(let i=0;i<revealedCount;i++) prob *= Math.max(1,(25-mineCount-i)) / Math.max(1,(25-i));
+    return clamp((1 / Math.max(.001,prob)) * .82, 1.02, 55);
+  }
+  function minesStakeItem(){
+    const g = minesActiveGame();
+    const uid = g ? g.stakeUid : (($('#minesStake') && $('#minesStake').value) || '');
+    return state.inventory.find(x=>x.uid===uid) || null;
+  }
+  function renderMines(){
+    const root = $('#minesRoot'); if(!root) return;
+    const g = minesActiveGame();
+    const inv = [...state.inventory].sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
+    if(g && !state.inventory.some(x=>x.uid===g.stakeUid)) state.minesGame = null;
+    const current = minesActiveGame();
+    const options = inv.map(x=>`<option value="${esc(x.uid)}">${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
+    const selected = current ? state.inventory.find(x=>x.uid===current.stakeUid) : inv[0];
+    const gameHtml = current ? minesBoardHtml(current, selected) : `<div class="mines-start-card"><label class="field-label">Скин для ставки</label><select id="minesStake">${options}</select><label class="field-label">Мин на поле</label><select id="minesCount"><option value="3">3 мины · легче</option><option value="5" selected>5 мин · баланс</option><option value="7">7 мин · риск</option><option value="10">10 мин · хардкор</option></select><div id="minesInfo"></div><button class="btn primary huge" data-action="start-mines" ${inv.length?'':'disabled'}>Начать сапёр</button><p class="small">Выбери клетки. Попал на мину — скин исчезает. Забрал вовремя — получаешь предмет дороже твоей ставки.</p></div>`;
+    root.innerHTML = `<div class="mines-hero panel"><span class="kicker">Skin Mines</span><h2>Сапёр на скины</h2><p>Стилизованный сапёр без реальных ставок и вывода: всё работает локально в браузере. Чем больше безопасных клеток открыл — тем выше множитель награды.</p><div class="grid cards-3"><div class="stat"><small>Игр</small><b>${state.mines||0}</b></div><div class="stat"><small>Побед</small><b>${state.minesWins||0}</b></div><div class="stat"><small>Активный риск</small><b>${selected?fmt(selected.value):'нет'}</b></div></div></div><div class="mines-layout"><aside class="panel mines-sidebar"><h3>Условия</h3>${selected?itemCard(selected):'<div class="empty">В инвентаре нет предметов для ставки.</div>'}<div class="notice"><b>Совет:</b> на 3 минах множитель растёт медленно, на 10 — быстро, но риск огромный.</div></aside><section>${gameHtml}</section></div>`;
+    if(!current) renderMinesInfo();
+  }
+  function renderMinesInfo(){
+    const stake = minesStakeItem() || state.inventory[0];
+    const mines = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,10);
+    const el = $('#minesInfo'); if(!el) return;
+    const preview = [1,3,5,8].map(n=>`<span>${n} safe: <b>${minesMultiplier(mines,n).toFixed(2)}x</b></span>`).join('');
+    el.innerHTML = stake ? `<div class="battle-price"><span>Ставка</span><b>${fmt(stake.value)}</b></div><div class="battle-price"><span>Поле</span><b>5×5 / ${mines} мин</b></div><div class="mines-preview">${preview}</div>` : '<div class="empty">Нет скинов для игры.</div>';
+  }
+  function minesBoardHtml(g, stake){
+    const revealed = new Set(g.revealed||[]);
+    const mines = new Set(g.cells||[]);
+    const safe = revealed.size;
+    const mult = minesMultiplier(g.mineCount, safe);
+    const value = stake ? Math.round(toNum(stake.value,0) * mult) : 0;
+    const cells = Array.from({length:25},(_,i)=>{
+      const open = revealed.has(i) || g.finished;
+      const mine = mines.has(i);
+      const label = open ? (mine ? '✹' : '✓') : '';
+      return `<button class="mine-cell ${open?'open':''} ${mine&&open?'mine':''}" data-action="mines-cell" data-cell="${i}" ${g.finished||open?'disabled':''}>${label}</button>`;
+    }).join('');
+    return `<div class="mines-game"><div class="mines-top"><div><span class="kicker">Активная игра</span><h2>${g.finished?'Раунд завершён':'Выбирай клетки'}</h2><p>Открыто безопасных клеток: <b>${safe}</b> · мин: <b>${g.mineCount}</b></p></div><div class="mines-bank"><span>Текущий множитель</span><b>${mult.toFixed(2)}x</b><small>Потенциально: ${fmt(value)}</small></div></div><div class="mines-board">${cells}</div><div class="mines-actions"><button class="btn green huge" data-action="cashout-mines" ${safe<1||g.finished?'disabled':''}>Забрать ${fmt(value)}</button><button class="btn" data-action="cancel-mines" ${g.finished?'':'disabled'}>Новый раунд</button></div></div>`;
+  }
+  function startMines(){
+    if(minesActiveGame()) return toast('Сначала заверши текущий сапёр','warn');
+    const stake = minesStakeItem() || state.inventory[0];
+    if(!stake) return toast('В инвентаре нет скина для ставки','bad');
+    const mineCount = clamp(Math.round(toNum($('#minesCount') && $('#minesCount').value,5)),3,10);
+    const cells = [];
+    while(cells.length < mineCount){ const n = Math.floor(cryptoRandom()*25); if(!cells.includes(n)) cells.push(n); }
+    state.minesGame = {active:true, stakeUid:stake.uid, mineCount, cells, revealed:[], startedAt:Date.now(), finished:false, lostCell:null};
+    state.mines = Math.round(toNum(state.mines,0)) + 1;
+    save(); renderMines(); toast('Сапёр начался. Удачи!','good');
+  }
+  function revealMinesCell(cell){
+    const g = minesActiveGame(); if(!g || g.finished) return;
+    cell = Math.round(toNum(cell,-1)); if(cell < 0 || cell >= 25) return;
+    if((g.revealed||[]).includes(cell)) return;
+    const stake = state.inventory.find(x=>x.uid===g.stakeUid);
+    if(!stake){ state.minesGame=null; save(); renderMines(); return toast('Ставочный скин не найден','bad'); }
+    if((g.cells||[]).includes(cell)){
+      g.revealed = Array.from(new Set([...(g.revealed||[]), cell])); g.finished = true; g.lostCell = cell;
+      removeItems(stake.uid); state.minesGame = null; save(); renderMines(); toast('Мина! Скин сгорел.','bad'); return;
+    }
+    g.revealed = Array.from(new Set([...(g.revealed||[]), cell]));
+    if(g.revealed.length >= 25 - g.mineCount) return cashoutMines(true);
+    save(); renderMines();
+  }
+  function cashoutMines(auto=false){
+    const g = minesActiveGame(); if(!g || g.finished) return;
+    const stake = state.inventory.find(x=>x.uid===g.stakeUid); if(!stake){ state.minesGame=null; save(); renderMines(); return; }
+    const safe = (g.revealed||[]).length;
+    if(safe < 1 && !auto) return toast('Открой хотя бы одну безопасную клетку','warn');
+    const mult = minesMultiplier(g.mineCount, safe);
+    const targetValue = Math.max(stake.value + 50, Math.round(toNum(stake.value,0) * mult));
+    const base = Object.assign({}, pickItemForValue(targetValue), {value:targetValue});
+    removeItems(stake.uid);
+    const reward = addItem(base, 'sapper-win');
+    state.minesWins = Math.round(toNum(state.minesWins,0)) + 1;
+    state.minesGame = null;
+    addLive('Ты', reward);
+    save(); renderMines(); showDrop(reward,null); toast(`Сапёр выигран: ${reward.displayName}`,'good');
+  }
+  function cancelMinesGame(){ state.minesGame = null; save(); renderMines(); }
 
   function renderBattle(){
     const root = $('#battleRoot'); if(!root) return;
@@ -1806,7 +1964,12 @@
       if(a === 'start-battle'){ startBattle(); return true; }
       if(a === 'make-contract'){ makeContract(); return true; }
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return true; }
+      if(a === 'set-upgrade-mult'){ state.upgradeMode = clamp(Math.round(toNum(el.dataset.mult,2)),2,10); if(![2,3,5,10].includes(state.upgradeMode)) state.upgradeMode=2; save(); renderUpgrade(); return true; }
       if(a === 'do-upgrade'){ doUpgrade(); return true; }
+      if(a === 'start-mines'){ startMines(); return true; }
+      if(a === 'mines-cell'){ revealMinesCell(el.dataset.cell); return true; }
+      if(a === 'cashout-mines'){ cashoutMines(); return true; }
+      if(a === 'cancel-mines'){ cancelMinesGame(); return true; }
       if(a === 'sell-cheap'){ sellCheap(); return true; }
       if(a === 'sell-all-inventory'){ sellAllInventory(); return true; }
       if(a === 'reset-save'){ resetSave(); return true; }
@@ -2051,7 +2214,9 @@
   });
   function bpFindPrize(name, rarity='Covert', value=50000, category='skin'){
     const low = name.toLowerCase();
-    const found = catalog.items.find(x => String(x.name||'').toLowerCase().includes(low));
+    let found = catalog.items.find(x => String(x.name||'').toLowerCase().includes(low));
+    if(!found && /operation pass/.test(low)) found = catalog.items.find(x => /operation .*pass|access pass/i.test(String(x.name||'')));
+    if(!found && /viewer pass/.test(low)) found = catalog.items.find(x => /viewer pass/i.test(String(x.name||'')));
     const fixed = FIXED_PRIZE_IMAGES[low] || '';
     const image = fixed || realImageUrl(found && found.image) || svgSkin(name,'#facc15','#ef4444');
     return Object.assign({id:'bp-prize-'+slug(name), name, rarity, rarityColor:rarityColors[rarity]||'#ffd700', value, category, image, weight:1}, found || {}, {name:(found && found.name) || name, value:(found && found.value && found.value > value*.4) ? found.value : value, image});
@@ -2125,7 +2290,7 @@
     const finalPool = bpFinalPool();
     const missionHtml = level >= BATTLE_PASS_MAX_LEVEL ? `<div class="bp-current done"><h2>Пасс завершён</h2><p>Все 100 уровней закрыты. Финальный Dragon Hoard Case уже выдан.</p></div>` : `<div class="bp-current"><div class="bp-current-head"><span class="kicker">Текущее задание</span><h2>${esc(mission.title)}</h2><p>Награда: <b>${esc(bpRewardLabel(mission.reward))}</b></p></div><div class="bp-reqs">${progress.map(x=>`<div class="bp-req"><div><b>${esc(bpReqTitle(x.req))}</b><small>${Math.min(x.got,x.need).toLocaleString('ru-RU')} / ${x.need.toLocaleString('ru-RU')}</small></div><div class="bp-bar"><span style="width:${x.pct}%"></span></div></div>`).join('')}</div><button class="btn primary huge" data-action="claim-battle-pass" ${done?'':'disabled'}>${done?'Забрать награду':'Задание не выполнено'}</button></div>`;
     const levels = Array.from({length:BATTLE_PASS_MAX_LEVEL},(_,i)=>i+1).map(l=>{ const r=bpRewardForLevel(l); return `<div class="bp-node ${l<=level?'claimed':l===currentLevel?'current':'locked'}" title="Уровень ${l}: ${esc(bpRewardLabel(r))}"><b>${l}</b><span>${r.type==='finalCase'?'🐉':r.type==='promo'?'CODE':r.type==='coins'?CURRENCY_OPTIONS[activeCurrency()].label:r.type==='case'?'CASE':'ITEM'}</span></div>`; }).join('');
-    root.innerHTML = `<section class="bp-hero"><div><span class="kicker">Dragon Hoard Battle-pass</span><h2>100 уровней охоты за древним дропом</h2><p>Сложный статический pass для GitHub Pages: задания идут последовательно после активации. Нужно открывать конкретные кейсы, играть battle, делать контракты, ловить редкие дропы и тратить баланс.</p><div class="bp-price">Активация: <b>${fmt(BATTLE_PASS_PRICE)}</b></div>${bp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-battle-pass">Активировать за ${fmt(BATTLE_PASS_PRICE)}</button>`}</div><div class="bp-final"><h3>Финал 100 уровня</h3><p>Dragon Hoard Case гарантированно выдаёт один из трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${imgTag(x.image,x.name)}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${BATTLE_PASS_MAX_LEVEL}</h2><p>${bp.active ? 'Прогресс учитывается только после покупки pass.' : 'Пасс ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта уровней</h2><p>Каждый уровень даёт предмет, pass-кейс, промокод или баланс. 25/50/75/100 — усиленные контрольные призы.</p></div></div><div class="bp-level-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние награды</h3><div class="bp-history">${bp.rewards.length ? bp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Полученные pass-промокоды</h3><div class="promo-used">${bp.vouchers.length ? bp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на уровнях 7, 14, 21...</p>'}</div></article></section>`;
+    root.innerHTML = `<section class="bp-hero"><div><span class="kicker">Dragon Hoard Battle-pass</span><h2>100 уровней охоты за древним дропом</h2><p>Сложный статический pass для GitHub Pages: задания идут последовательно после активации. Нужно открывать конкретные кейсы, играть battle, делать контракты, ловить редкие дропы и тратить баланс.</p><div class="bp-price">Активация: <b>${fmt(BATTLE_PASS_PRICE)}</b></div>${bp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-battle-pass">Активировать за ${fmt(BATTLE_PASS_PRICE)}</button>`}</div><div class="bp-final"><h3>Финал 100 уровня</h3><p>Dragon Hoard Case гарантированно выдаёт один из трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${itemImageOrPlaceholder(x,'CS2')}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${BATTLE_PASS_MAX_LEVEL}</h2><p>${bp.active ? 'Прогресс учитывается только после покупки pass.' : 'Пасс ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта уровней</h2><p>Каждый уровень даёт предмет, pass-кейс, промокод или баланс. 25/50/75/100 — усиленные контрольные призы.</p></div></div><div class="bp-level-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние награды</h3><div class="bp-history">${bp.rewards.length ? bp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Полученные pass-промокоды</h3><div class="promo-used">${bp.vouchers.length ? bp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на уровнях 7, 14, 21...</p>'}</div></article></section>`;
   }
 
 
@@ -2278,7 +2443,7 @@
     const finalPool = seasonalFinalPool();
     const missionHtml = level >= SEASONAL_PASS_MAX_LEVEL ? `<div class="bp-current done"><h2>Сезонный pass завершён</h2><p>Все 30 уровней закрыты. Финальный сезонный кейс уже выдан.</p></div>` : `<div class="bp-current seasonal"><div class="bp-current-head"><span class="kicker">Текущее сезонное задание</span><h2>${esc(mission.title)}</h2><p>Награда: <b>${esc(bpRewardLabel(mission.reward))}</b></p></div><div class="bp-reqs">${progress.map(x=>`<div class="bp-req"><div><b>${esc(bpReqTitle(x.req))}</b><small>${Math.min(x.got,x.need).toLocaleString('ru-RU')} / ${x.need.toLocaleString('ru-RU')}</small></div><div class="bp-bar"><span style="width:${x.pct}%"></span></div></div>`).join('')}</div><button class="btn primary huge" data-action="claim-seasonal-pass" ${done?'':'disabled'}>${done?'Забрать награду':'Задание не выполнено'}</button></div>`;
     const levels = Array.from({length:SEASONAL_PASS_MAX_LEVEL},(_,i)=>i+1).map(l=>{ const r=seasonalRewardForLevel(l); return `<div class="bp-node seasonal ${l<=level?'claimed':l===currentLevel?'current':'locked'}" title="Уровень ${l}: ${esc(bpRewardLabel(r))}"><b>${l}</b><span>${r.type==='seasonalCase'?'☀️':r.type==='promo'?'CODE':r.type==='coins'?CURRENCY_OPTIONS[activeCurrency()].label:r.type==='case'?'CASE':'ITEM'}</span></div>`; }).join('');
-    root.innerHTML = `<section class="bp-hero seasonal-hero"><div><span class="kicker">Limited Seasonal Battle-pass</span><h2>Сезон «Dragon Heat» — 30 уровней</h2><p>Лимитированная вкладка на 30 дней: задания проще основного pass, награды скромнее, финал — сезонный кейс без гарантированных Gungnir/Dragon Lore.</p><div class="bp-price">Активация: <b>${fmt(SEASONAL_PASS_PRICE,'USD')}</b> / ${fmt(SEASONAL_PASS_PRICE)}</div><div class="season-timer">До скрытия вкладки: <b>${esc(seasonalTimeLeftText())}</b></div>${sp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-seasonal-pass">Активировать за ${fmt(SEASONAL_PASS_PRICE,'USD')}</button>`}</div><div class="bp-final"><h3>Финал 30 уровня</h3><p>Season Final Case выдаёт один из сезонных трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${imgTag(x.image,x.name)}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${SEASONAL_PASS_MAX_LEVEL}</h2><p>${sp.active ? 'Прогресс учитывается только после покупки сезонного pass.' : 'Pass ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта сезонных уровней</h2><p>30 уровней: баланс, предметы, pass-промокоды и сезонные drop-кейсы. 10/20/30 — усиленные призы.</p></div></div><div class="bp-level-grid seasonal-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние сезонные награды</h3><div class="bp-history">${sp.rewards.length ? sp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Сезонные промокоды</h3><div class="promo-used">${sp.vouchers.length ? sp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на нескольких уровнях сезона.</p>'}</div></article></section>`;
+    root.innerHTML = `<section class="bp-hero seasonal-hero"><div><span class="kicker">Limited Seasonal Battle-pass</span><h2>Сезон «Dragon Heat» — 30 уровней</h2><p>Лимитированная вкладка на 30 дней: задания проще основного pass, награды скромнее, финал — сезонный кейс без гарантированных Gungnir/Dragon Lore.</p><div class="bp-price">Активация: <b>${fmt(SEASONAL_PASS_PRICE,'USD')}</b> / ${fmt(SEASONAL_PASS_PRICE)}</div><div class="season-timer">До скрытия вкладки: <b>${esc(seasonalTimeLeftText())}</b></div>${sp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-seasonal-pass">Активировать за ${fmt(SEASONAL_PASS_PRICE,'USD')}</button>`}</div><div class="bp-final"><h3>Финал 30 уровня</h3><p>Season Final Case выдаёт один из сезонных трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${itemImageOrPlaceholder(x,'CS2')}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${SEASONAL_PASS_MAX_LEVEL}</h2><p>${sp.active ? 'Прогресс учитывается только после покупки сезонного pass.' : 'Pass ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта сезонных уровней</h2><p>30 уровней: баланс, предметы, pass-промокоды и сезонные drop-кейсы. 10/20/30 — усиленные призы.</p></div></div><div class="bp-level-grid seasonal-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние сезонные награды</h3><div class="bp-history">${sp.rewards.length ? sp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Сезонные промокоды</h3><div class="promo-used">${sp.vouchers.length ? sp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на нескольких уровнях сезона.</p>'}</div></article></section>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
@@ -2314,7 +2479,7 @@
   }
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает ${fmt(15000)}. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Сапёр: <b>${state.mines||0}</b> игр / <b>${state.minesWins||0}</b> побед</p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><p>${storageStatusText()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает ${fmt(15000)}. Также убирает старые сломанные ключи v3–v8.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
     if(!confirm(`Сбросить прогресс и вернуть стартовый баланс ${fmt(15000)}?`)) return;
