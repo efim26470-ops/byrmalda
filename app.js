@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.4.0';
+  const VERSION = '31.5.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -20,7 +20,7 @@
   const LC_USD_VALUE = 10;
   const RUB_PER_LC = RUB_PER_USD * LC_USD_VALUE;
   const CURRENCY = 'RUB';
-  const PRICE_VERSION = 'market-multi-v31-4';
+  const PRICE_VERSION = 'market-multi-v31-5';
   const CURRENCY_OPTIONS = Object.freeze({
     RUB:{label:'₽', name:'Рубли', rate:1, suffix:'₽', decimals:0},
     USD:{label:'$', name:'Доллары', rate:RUB_PER_USD, prefix:'$', decimals:2},
@@ -30,6 +30,8 @@
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
+  const BATTLE_PASS_PRICE = 200000;
+  const BATTLE_PASS_MAX_LEVEL = 100;
   const PROMO_CODES = Object.freeze({
     WELCOME30: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
     KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 20000, TEST100K: 15000
@@ -195,7 +197,22 @@
   let wheelDeg = 0;
   let currentCase = null;
 
-  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],battlePass:defaultBattlePass(),createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultBattlePass(){ return {active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
+  function normalizeBattlePass(bp){
+    const base = defaultBattlePass();
+    bp = (bp && typeof bp === 'object') ? bp : {};
+    const out = Object.assign(base, bp);
+    out.active = !!out.active;
+    out.level = clamp(Math.round(toNum(out.level,0)),0,BATTLE_PASS_MAX_LEVEL);
+    out.activatedAt = Math.max(0, Math.round(toNum(out.activatedAt,0)));
+    out.current = (out.current && typeof out.current === 'object') ? out.current : {level:out.level+1,counts:{}};
+    out.current.level = clamp(Math.round(toNum(out.current.level,out.level+1)),1,BATTLE_PASS_MAX_LEVEL);
+    out.current.counts = (out.current.counts && typeof out.current.counts === 'object') ? out.current.counts : {};
+    out.rewards = Array.isArray(out.rewards) ? out.rewards.slice(0,160) : [];
+    out.vouchers = Array.isArray(out.vouchers) ? out.vouchers.slice(0,80) : [];
+    return out;
+  }
   function toNum(v,d=0){ const n = Number(String(v).replace(/\s/g,'').replace(',','.')); return Number.isFinite(n) ? n : d; }
   function normalizeState(raw){
     const base = defaultState();
@@ -211,6 +228,7 @@
     s.lastWheelAt = Math.max(0, Math.round(toNum(s.lastWheelAt,0)));
     s.adViews = (s.adViews && typeof s.adViews === 'object') ? s.adViews : {};
     s.usedPromos = Array.isArray(s.usedPromos) ? s.usedPromos.map(x=>String(x).toUpperCase()).slice(0,100) : [];
+    s.battlePass = normalizeBattlePass(s.battlePass);
     return s;
   }
   function normalizeInvItem(it){
@@ -251,7 +269,7 @@
       opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins,
       tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
       pendingUpgrade:s.pendingUpgrade||null, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[],
-      createdAt:s.createdAt||Date.now(), savedAt:Date.now()
+      battlePass:normalizeBattlePass(s.battlePass), createdAt:s.createdAt||Date.now(), savedAt:Date.now()
     };
   }
   function cleanupStorageBeforeLoad(){
@@ -445,6 +463,7 @@
     removeItems(uid);
     state.sold += it.value;
     earn(it.value, `Продажа ${it.displayName||it.name}`);
+    bpEvent('sell', {value:it.value, count:1});
     route();
   }
 
@@ -967,6 +986,8 @@
       if(a === 'open-multi') return spinCase(currentCase, {fast:true,count:btn.dataset.count||1});
       if(a === 'sell-batch') return sellBatch((btn.dataset.uids||'').split(',').filter(Boolean));
       if(a === 'redeem-promo') return redeemPromo();
+      if(a === 'activate-battle-pass') return activateBattlePass();
+      if(a === 'claim-battle-pass') return claimBattlePassReward();
       if(a === 'spin-wheel') return spinWheel();
       if(a === 'start-ad') return startAd();
       if(a === 'start-battle') return startBattle();
@@ -1007,6 +1028,7 @@
     if(page === 'contracts') return renderContracts();
     if(page === 'wheel') return renderWheel();
     if(page === 'battle') return renderBattle();
+    if(page === 'battle-pass') return renderBattlePass();
     if(page === 'ads') return renderAds();
     if(page === 'promos') return renderPromos();
     if(page === 'profile') return renderProfile();
@@ -1237,6 +1259,7 @@
     if(fast || count > 1){
       const drops = Array.from({length:count}, () => addItem(weighted(c), c.name));
       drops.forEach(d => addLive('Ты', d));
+      bpEvent('case_open', {case:c, count, fast:true, totalCost, drops});
       busy.case = false;
       buttons.forEach(b => b.disabled = false);
       if(mainBtn) mainBtn.textContent = `Открыть 1x за ${fmt(c.price)}`;
@@ -1261,6 +1284,7 @@
   function finishDrop(win,c,btn){
     const inv = addItem(win, c.name);
     addLive('Ты', inv);
+    bpEvent('case_open', {case:c, count:1, fast:false, totalCost:c.price, drops:[inv]});
     busy.case = false;
     $$('[data-action="spin-current-case"],[data-action="spin-fast"],[data-action="open-multi"],[data-action="open-again"],[data-action="open-again-fast"]').forEach(b => b.disabled=false);
     if(btn){ btn.disabled=false; btn.textContent=`Открыть 1x за ${fmt(c.price)}`; }
@@ -1287,6 +1311,7 @@
     removeItems(items.map(x=>x.uid));
     state.sold += Math.round(total);
     earn(total, `Массовая продажа x${items.length}`);
+    bpEvent('sell', {value:total, count:items.length});
     closeModal($('#dropModal'));
     route();
   }
@@ -1397,6 +1422,7 @@
       removeItems(src.uid); state.upgrades += 1;
       if(success){ const win = addItem(tgt,'upgrade'); state.pendingUpgrade=win.uid; addLive('Ты',win); toast(`Апгрейд успешен: ${win.displayName}`,'good'); showDrop(win,null); }
       else{ state.pendingUpgrade=null; toast('Апгрейд не прошёл, предмет сгорел','bad'); }
+      bpEvent('upgrade', {success});
       busy.upgrade=false; save(); renderUpgrade();
     }, 3900);
   }
@@ -1423,7 +1449,7 @@
     const base = Object.assign({}, sample(candidates), {value:Math.round(total*rnd(.92,1.9))});
     removeItems(selected.map(x=>x.uid));
     state.contractSelected=[]; state.contracts += 1;
-    const reward = addItem(base,'contract'); addLive('Ты',reward); save(); renderContracts(); showDrop(reward,null);
+    const reward = addItem(base,'contract'); addLive('Ты',reward); bpEvent('contract', {value:reward.value}); save(); renderContracts(); showDrop(reward,null);
     toast(`Контракт создан: ${reward.displayName}`,'good');
   }
 
@@ -1450,11 +1476,11 @@
     const wh = $('#wheel'); if(wh) wh.style.transform = `rotate(${wheelDeg}deg)`;
     setTimeout(()=>{
       const [label,type,amount] = rewards[idx];
-      if(type === 'coins'){ earn(amount,'Бонусное колесо'); $('#wheelResult').innerHTML = `<div class="result-card"><h2>${esc(label)}</h2><p>Баланс обновлён: ${fmt(state.balance)}</p></div>`; }
+      if(type === 'coins'){ earn(amount,'Бонусное колесо'); bpEvent('wheel', {type:'coins', amount}); $('#wheelResult').innerHTML = `<div class="result-card"><h2>${esc(label)}</h2><p>Баланс обновлён: ${fmt(state.balance)}</p></div>`; }
       else{
         let pool = catalog.items;
         if(type === 'rare') pool = catalog.items.filter(x => ['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(x.rarity));
-        const it = addItem(sample(pool.length?pool:catalog.items),'wheel'); addLive('Ты',it); $('#wheelResult').innerHTML = itemCard(it,{badge:'колесо'});
+        const it = addItem(sample(pool.length?pool:catalog.items),'wheel'); addLive('Ты',it); bpEvent('wheel', {type:'item', item:it}); $('#wheelResult').innerHTML = itemCard(it,{badge:'колесо'});
       }
       busy.wheel=false; renderWheel();
     }, 3300);
@@ -1487,6 +1513,7 @@
         clearInterval(int);
         const k = DAY_KEY(); state.adViews[k] = todayAdViews() + 1;
         earn(AD_REWARD,'Просмотр рекламы');
+        bpEvent('ad', {amount:AD_REWARD});
         busy.ad=false; modal.dataset.locked='0';
         modal.querySelector('.close').textContent = '×';
         setTimeout(()=>{ closeModal(modal); modal.remove(); renderAds(); }, 700);
@@ -1557,6 +1584,7 @@
       }
       const userWon = mode === '2v2' ? winner.team === 'A' : winner.name === 'Ты';
       arena.innerHTML = `<div class="battle-summary ${userWon?'win':'lose'}"><h2>${userWon?'Победа!':'Поражение'}</h2><p>${esc(winner.name)} забирает пул на ${fmt(results.reduce((s,x)=>s+x.inv.value,0))}</p></div>` + results.map(x => `<article class="battle-player result ${((mode==='2v2' && x.team===winner.team) || (mode!=='2v2' && x.name===winner.name))?'winner':''}"><div class="battle-player-head"><b>${esc(x.name)}</b>${mode==='2v2'?`<span class="pill">Team ${x.team}</span>`:''}</div>${itemCard(x.inv,{badge:fmt(x.inv.value)})}</article>`).join('');
+      bpEvent('battle', {won:userWon, mode, players:results.length});
       if(userWon){
         state.wins += 1;
         results.forEach(x => { const it = addItem(Object.assign({}, x.inv, {uid:undefined}), 'battle-win'); addLive('Ты',it); });
@@ -1816,6 +1844,238 @@
     const ios = isIOSDevice();
     const standalone = isStandaloneMode();
     root.innerHTML = `<div class="grid cards-2 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт работает как обычная статическая PWA: достаточно залить файлы в репозиторий. Никакие .bat, database-файлы и сервер не нужны.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article></div><div class="notice block ios-notice"><b>GitHub Pages v31:</b> чистая статическая сборка без .bat и архивов для Windows. Save хранится только в браузере пользователя через localStorage/IndexedDB, без внешней базы данных.</div>`;
+  }
+
+
+  function bpState(){ state.battlePass = normalizeBattlePass(state.battlePass); return state.battlePass; }
+  function bpCaseGroup(c){
+    const idv = String(c && c.id || '').toLowerCase();
+    const name = String(c && c.name || '').toLowerCase();
+    if(/stickers-|sticker|capsule/.test(idv + ' ' + name)) return 'stickers';
+    if(/special-|knife|glove/.test(idv + ' ' + name)) return 'special';
+    if(/collection|limited|armory/.test(String(c && c.kind || '') + ' ' + name)) return 'limited';
+    if(/quality-|consumer|industrial|milspec|restricted|classified|covert/.test(idv)) return 'quality';
+    if(/agents|charms|patches|collectibles/.test(idv)) return 'extras';
+    return 'classic';
+  }
+  function bpRarityClass(it){
+    const r = rarityBucket(it && it.rarity || 'Mil-Spec Grade');
+    if(['Covert','Rare Special','Contraband','Exceedingly Rare','Extraordinary'].includes(r)) return 'redOrGold';
+    if(['Classified','Superior','Master'].includes(r)) return 'pinkPlus';
+    if(['Restricted','Exceptional'].includes(r)) return 'purplePlus';
+    return r;
+  }
+  function bpFindCase(words, fallback=0){
+    const arr = Array.isArray(words) ? words : [words];
+    const found = catalog.cases.find(c => arr.some(w => String(c.name).toLowerCase().includes(String(w).toLowerCase())));
+    return found || catalog.cases[fallback % Math.max(1,catalog.cases.length)] || fallbackCases[0];
+  }
+  function bpReqTitle(req){
+    const unit = req.unit || 'раз';
+    if(req.type === 'openAny') return `Открыть любые кейсы: ${req.need} ${unit}`;
+    if(req.type === 'openCase') return `Открыть ${req.caseName || 'заданный кейс'}: ${req.need} ${unit}`;
+    if(req.type === 'openGroup') return `Открыть раздел «${req.groupName || req.group}»: ${req.need} ${unit}`;
+    if(req.type === 'fastOpen') return `Сделать быстрые открытия: ${req.need} ${unit}`;
+    if(req.type === 'multiOpen') return `Открыть кейсы через x3/x5/x10: ${req.need} ${unit}`;
+    if(req.type === 'spendCases') return `Потратить на кейсы: ${fmt(req.need)}`;
+    if(req.type === 'dropRarity') return `Выбить ${req.label || req.rarity}: ${req.need} ${unit}`;
+    if(req.type === 'sellValue') return `Продать предметов на сумму: ${fmt(req.need)}`;
+    if(req.type === 'upgradeTry') return `Сделать апгрейды: ${req.need} ${unit}`;
+    if(req.type === 'upgradeSuccess') return `Выиграть апгрейды: ${req.need} ${unit}`;
+    if(req.type === 'contract') return `Собрать контракты: ${req.need} ${unit}`;
+    if(req.type === 'battlePlay') return `Сыграть Case Battle: ${req.need} ${unit}`;
+    if(req.type === 'battleWin') return `Победить в Case Battle: ${req.need} ${unit}`;
+    if(req.type === 'wheel') return `Прокрутить бонусное колесо: ${req.need} ${unit}`;
+    if(req.type === 'ad') return `Просмотреть рекламу проектов: ${req.need} ${unit}`;
+    return req.title || `Задание: ${req.need}`;
+  }
+  function bpMissionForLevel(level){
+    const names = ['Kilowatt','Revolution','Recoil','Dreams','Fracture','Clutch','Prisma','Spectrum','Riptide','Snakebite','Horizon','Gamma','Danger Zone','CS20','Glove','Chroma','Falchion','Huntsman','Phoenix','Fever','Gallery'];
+    const c = bpFindCase(names[(level-1) % names.length], level);
+    const groupCycle = [
+      ['classic','Классические'],['limited','Лимитированная серия'],['quality','Кейсы по качеству'],['stickers','Наклейки'],['special','Ножи и перчатки'],['extras','Агенты и другое']
+    ];
+    const g = groupCycle[(level-1) % groupCycle.length];
+    const stage = Math.floor((level-1)/10);
+    const hard = 1 + stage * 0.55;
+    const mod = level % 10;
+    let reqs;
+    if(level === 1) reqs = [{type:'openAny', need:8, unit:'открытий'}];
+    else if(level === 25) reqs = [{type:'battleWin', need:4, unit:'победы'}];
+    else if(level === 50) reqs = [{type:'dropRarity', rarity:'pinkPlus', label:'Classified/розовые или выше', need:10, unit:'дропов'}];
+    else if(level === 75) reqs = [{type:'spendCases', need:180000, unit:'₽'}];
+    else if(level === 100) reqs = [
+      {type:'openGroup', group:'special', groupName:'Ножи и перчатки', need:45, unit:'открытий'},
+      {type:'battleWin', need:10, unit:'побед'},
+      {type:'dropRarity', rarity:'redOrGold', label:'красные/золотые дропы', need:6, unit:'дропов'},
+      {type:'contract', need:8, unit:'контрактов'}
+    ];
+    else if(mod === 1) reqs = [{type:'openCase', caseId:c.id, caseName:c.name, need:Math.round(4 + level*.9*hard), unit:'открытий'}];
+    else if(mod === 2) reqs = [{type:'openGroup', group:g[0], groupName:g[1], need:Math.round(7 + level*.75*hard), unit:'открытий'}];
+    else if(mod === 3) reqs = [{type:'fastOpen', need:Math.round(8 + level*.55*hard), unit:'быстрых открытий'}];
+    else if(mod === 4) reqs = [{type:'dropRarity', rarity: stage>=5 ? 'redOrGold' : (stage>=2 ? 'pinkPlus' : 'purplePlus'), label: stage>=5 ? 'красные/золотые дропы' : (stage>=2 ? 'розовые или выше' : 'фиолетовые или выше'), need:Math.round(2 + stage*1.6), unit:'дропов'}];
+    else if(mod === 5) reqs = [{type:'sellValue', need:Math.round(4500 + level*1300*hard), unit:'₽'}];
+    else if(mod === 6) reqs = [{type:'upgradeTry', need:Math.round(1 + stage*.9), unit:'апгрейдов'}];
+    else if(mod === 7) reqs = [{type:'battlePlay', need:Math.round(2 + stage*.8), unit:'баттлов'}];
+    else if(mod === 8) reqs = [{type:'multiOpen', need:Math.round(9 + level*.5*hard), unit:'открытий'}];
+    else if(mod === 9) reqs = [{type:'wheel', need:Math.max(1, Math.round(1 + stage*.35)), unit:'прокруток'}];
+    else reqs = [{type:'contract', need:Math.max(1, Math.round(1 + stage*.5)), unit:'контрактов'}];
+    const chapter = stage < 2 ? 'Разведка' : stage < 4 ? 'Арсенал' : stage < 6 ? 'Красная зона' : stage < 8 ? 'Охота за легендой' : 'Драконий контракт';
+    return {level, title:`Уровень ${level}: ${chapter}`, reqs, reward:bpRewardForLevel(level)};
+  }
+  function bpRewardForLevel(level){
+    if(level === 100) return {type:'finalCase', label:'Dragon Hoard Case', text:'AWP | Gungnir / AWP | Dragon Lore / Katowice 2014'};
+    if(level % 25 === 0) return {type:'item', tier:'legend', label:'Легендарный предмет', text:'дорогой красный/золотой приз'};
+    if(level % 10 === 0) return {type:'case', tier:'premium', label:'Премиум pass-кейс', text:'один предмет из дорогого пула'};
+    if(level % 7 === 0) return {type:'promo', amount:Math.round(3500 + level*260), label:'Промокод pass'};
+    if(level % 3 === 0) return {type:'item', tier:'mid', label:'Случайный предмет'};
+    return {type:'coins', amount:Math.round(1200 + level*180), label:'Баланс'};
+  }
+  function bpReqKey(req, idx){ return `${idx}:${req.type}:${req.caseId||req.group||req.rarity||''}`; }
+  function bpMissionProgress(m){
+    const bp = bpState();
+    if(!bp.current || bp.current.level !== m.level) bp.current = {level:m.level, counts:{}};
+    return m.reqs.map((req,idx) => {
+      const key = bpReqKey(req, idx);
+      const got = Math.max(0, Math.round(toNum(bp.current.counts[key],0)));
+      const need = Math.max(1, Math.round(toNum(req.need,1)));
+      return {req, key, got, need, pct:clamp(got / need * 100, 0, 100), done:got >= need};
+    });
+  }
+  function bpMissionDone(m){ return bpMissionProgress(m).every(x=>x.done); }
+  function bpAddToReq(req, payload, event){
+    if(event === 'case_open'){
+      const c = payload.case || {};
+      const count = Math.max(1, Math.round(toNum(payload.count,1)));
+      const drops = Array.isArray(payload.drops) ? payload.drops : [];
+      if(req.type === 'openAny') return count;
+      if(req.type === 'openCase' && req.caseId === c.id) return count;
+      if(req.type === 'openGroup' && req.group === bpCaseGroup(c)) return count;
+      if(req.type === 'fastOpen' && payload.fast) return count;
+      if(req.type === 'multiOpen' && count >= 3) return count;
+      if(req.type === 'spendCases') return Math.max(0, Math.round(toNum(payload.totalCost,0)));
+      if(req.type === 'dropRarity') return drops.filter(d => bpRarityClass(d) === req.rarity || (req.rarity === 'purplePlus' && ['purplePlus','pinkPlus','redOrGold'].includes(bpRarityClass(d))) || (req.rarity === 'pinkPlus' && ['pinkPlus','redOrGold'].includes(bpRarityClass(d)))).length;
+    }
+    if(event === 'sell'){
+      if(req.type === 'sellValue') return Math.max(0, Math.round(toNum(payload.value,0)));
+    }
+    if(event === 'upgrade'){
+      if(req.type === 'upgradeTry') return 1;
+      if(req.type === 'upgradeSuccess' && payload.success) return 1;
+    }
+    if(event === 'contract' && req.type === 'contract') return 1;
+    if(event === 'battle'){
+      if(req.type === 'battlePlay') return 1;
+      if(req.type === 'battleWin' && payload.won) return 1;
+    }
+    if(event === 'wheel' && req.type === 'wheel') return 1;
+    if(event === 'ad' && req.type === 'ad') return 1;
+    return 0;
+  }
+  function bpEvent(event, payload={}){
+    const bp = bpState();
+    if(!bp.active || bp.level >= BATTLE_PASS_MAX_LEVEL) return;
+    const level = bp.level + 1;
+    const m = bpMissionForLevel(level);
+    if(!bp.current || bp.current.level !== level) bp.current = {level, counts:{}};
+    let changed = false;
+    m.reqs.forEach((req,idx)=>{
+      const add = bpAddToReq(req,payload,event);
+      if(add > 0){ const key = bpReqKey(req,idx); bp.current.counts[key] = Math.min(Math.round(toNum(req.need,1)), Math.round(toNum(bp.current.counts[key],0) + add)); changed = true; }
+    });
+    if(changed){ save(); if((document.body.dataset.page || '') === 'battle-pass') renderBattlePass(); }
+  }
+  function activateBattlePass(){
+    const bp = bpState();
+    if(bp.active) return toast('Battle-pass уже активирован','warn');
+    if(!spend(BATTLE_PASS_PRICE, 'Активация Battle-pass')) return;
+    state.battlePass = {active:true, level:0, activatedAt:Date.now(), current:{level:1, counts:{}}, rewards:[], vouchers:[]};
+    save();
+    toast('Battle-pass активирован. Прогресс идёт только после покупки.', 'good');
+    renderBattlePass();
+  }
+  function bpRewardPool(tier){
+    let pool = catalog.items.filter(Boolean);
+    if(tier === 'legend') pool = pool.filter(x => toNum(x.value,0) >= 45000 || ['Covert','Exceedingly Rare','Extraordinary','Contraband'].includes(x.rarity));
+    else if(tier === 'premium') pool = pool.filter(x => toNum(x.value,0) >= 12000 || ['Covert','Exceedingly Rare','Extraordinary'].includes(x.rarity));
+    else pool = pool.filter(x => toNum(x.value,0) >= 700 && toNum(x.value,0) <= 16000);
+    return pool.length ? pool : catalog.items;
+  }
+  function bpFindPrize(name, rarity='Covert', value=50000, category='skin'){
+    const low = name.toLowerCase();
+    const found = catalog.items.find(x => String(x.name||'').toLowerCase().includes(low));
+    return Object.assign({id:'bp-prize-'+slug(name), name, rarity, rarityColor:rarityColors[rarity]||'#ffd700', value, category, image:svgSkin(name,'#facc15','#ef4444'), weight:1}, found || {}, {name:(found && found.name) || name, value:(found && found.value && found.value > value*.4) ? found.value : value});
+  }
+  function bpFinalPool(){
+    return [
+      bpFindPrize('AWP | Gungnir','Covert',870000,'skin'),
+      bpFindPrize('AWP | Dragon Lore','Covert',1120000,'skin'),
+      bpFindPrize('Sticker | iBUYPOWER (Holo) | Katowice 2014','Extraordinary',860000,'sticker'),
+      bpFindPrize('Sticker | Titan (Holo) | Katowice 2014','Extraordinary',520000,'sticker'),
+      bpFindPrize('Sticker | Reason Gaming (Holo) | Katowice 2014','Extraordinary',250000,'sticker'),
+      bpFindPrize('Sticker | Dignitas (Holo) | Katowice 2014','Extraordinary',180000,'sticker')
+    ];
+  }
+  function bpApplyReward(level, reward){
+    let label = reward.label || 'Приз';
+    let item = null;
+    if(reward.type === 'coins'){
+      earn(reward.amount, `Battle-pass уровень ${level}`);
+      label = `${fmt(reward.amount)} на баланс`;
+    }else if(reward.type === 'promo'){
+      const code = `BP${String(level).padStart(3,'0')}${Math.floor(1000 + stableNoise(Date.now()+':'+level)*9000)}`;
+      const bp = bpState(); bp.vouchers.unshift({code, amount:reward.amount, level, time:Date.now()});
+      earn(reward.amount, `Battle-pass промокод ${code}`);
+      label = `Промокод ${code} на ${fmt(reward.amount)}`;
+    }else if(reward.type === 'item'){
+      item = addItem(sample(bpRewardPool(reward.tier)), `battle-pass lvl ${level}`);
+      addLive('Ты', item);
+      label = item.displayName || item.name;
+    }else if(reward.type === 'case'){
+      item = addItem(sample(bpRewardPool('premium')), `premium pass-case lvl ${level}`);
+      addLive('Ты', item);
+      label = `Премиум pass-кейс: ${item.displayName || item.name}`;
+    }else if(reward.type === 'finalCase'){
+      item = addItem(sample(bpFinalPool()), 'Dragon Hoard Final Case');
+      addLive('Ты', item);
+      label = `Dragon Hoard Case: ${item.displayName || item.name}`;
+    }
+    return {label, item};
+  }
+  function claimBattlePassReward(){
+    const bp = bpState();
+    if(!bp.active) return toast('Сначала активируй Battle-pass','bad');
+    if(bp.level >= BATTLE_PASS_MAX_LEVEL) return toast('Battle-pass уже завершён','good');
+    const level = bp.level + 1;
+    const m = bpMissionForLevel(level);
+    if(!bpMissionDone(m)) return toast('Задание уровня ещё не выполнено','warn');
+    const res = bpApplyReward(level, m.reward);
+    bp.level = level;
+    bp.current = {level:Math.min(BATTLE_PASS_MAX_LEVEL, level + 1), counts:{}};
+    bp.rewards.unshift({level, label:res.label, time:Date.now()});
+    state.battlePass = bp;
+    save();
+    if(res.item) showDrop(res.item,null); else toast(`Уровень ${level}: ${res.label}`, 'good');
+    renderBattlePass();
+  }
+  function bpRewardLabel(r){
+    if(r.type === 'coins') return `${fmt(r.amount)} на баланс`;
+    if(r.type === 'promo') return `Промокод на ${fmt(r.amount)}`;
+    return r.text || r.label;
+  }
+  function renderBattlePass(){
+    const root = $('#battlePassRoot'); if(!root) return;
+    const bp = bpState();
+    const level = bp.level || 0;
+    const currentLevel = Math.min(BATTLE_PASS_MAX_LEVEL, level + 1);
+    const mission = bpMissionForLevel(currentLevel);
+    const progress = bpMissionProgress(mission);
+    const done = bp.active && level < BATTLE_PASS_MAX_LEVEL && progress.every(x=>x.done);
+    const totalPct = clamp(level / BATTLE_PASS_MAX_LEVEL * 100, 0, 100);
+    const finalPool = bpFinalPool();
+    const missionHtml = level >= BATTLE_PASS_MAX_LEVEL ? `<div class="bp-current done"><h2>Пасс завершён</h2><p>Все 100 уровней закрыты. Финальный Dragon Hoard Case уже выдан.</p></div>` : `<div class="bp-current"><div class="bp-current-head"><span class="kicker">Текущее задание</span><h2>${esc(mission.title)}</h2><p>Награда: <b>${esc(bpRewardLabel(mission.reward))}</b></p></div><div class="bp-reqs">${progress.map(x=>`<div class="bp-req"><div><b>${esc(bpReqTitle(x.req))}</b><small>${Math.min(x.got,x.need).toLocaleString('ru-RU')} / ${x.need.toLocaleString('ru-RU')}</small></div><div class="bp-bar"><span style="width:${x.pct}%"></span></div></div>`).join('')}</div><button class="btn primary huge" data-action="claim-battle-pass" ${done?'':'disabled'}>${done?'Забрать награду':'Задание не выполнено'}</button></div>`;
+    const levels = Array.from({length:BATTLE_PASS_MAX_LEVEL},(_,i)=>i+1).map(l=>{ const r=bpRewardForLevel(l); return `<div class="bp-node ${l<=level?'claimed':l===currentLevel?'current':'locked'}" title="Уровень ${l}: ${esc(bpRewardLabel(r))}"><b>${l}</b><span>${r.type==='finalCase'?'🐉':r.type==='promo'?'CODE':r.type==='coins'?CURRENCY_OPTIONS[activeCurrency()].label:r.type==='case'?'CASE':'ITEM'}</span></div>`; }).join('');
+    root.innerHTML = `<section class="bp-hero"><div><span class="kicker">Dragon Hoard Battle-pass</span><h2>100 уровней охоты за древним дропом</h2><p>Сложный статический pass для GitHub Pages: задания идут последовательно после активации. Нужно открывать конкретные кейсы, играть battle, делать контракты, ловить редкие дропы и тратить баланс.</p><div class="bp-price">Активация: <b>${fmt(BATTLE_PASS_PRICE)}</b></div>${bp.active?'<span class="bp-status good">Активирован</span>':`<button class="btn primary huge" data-action="activate-battle-pass">Активировать за ${fmt(BATTLE_PASS_PRICE)}</button>`}</div><div class="bp-final"><h3>Финал 100 уровня</h3><p>Dragon Hoard Case гарантированно выдаёт один из трофеев:</p><div class="bp-final-grid">${finalPool.map(x=>`<div>${imgTag(x.image,x.name)}<b>${esc(x.name)}</b><small>${fmt(x.value)}</small></div>`).join('')}</div></div></section><section class="panel bp-progress-panel"><div class="head"><div><h2>Прогресс: ${level}/${BATTLE_PASS_MAX_LEVEL}</h2><p>${bp.active ? 'Прогресс учитывается только после покупки pass.' : 'Пасс ещё не активирован, задания не засчитываются.'}</p></div><b>${Math.round(totalPct)}%</b></div><div class="bp-bar big"><span style="width:${totalPct}%"></span></div></section>${missionHtml}<section class="block"><div class="head"><div><h2>Карта уровней</h2><p>Каждый уровень даёт предмет, pass-кейс, промокод или баланс. 25/50/75/100 — усиленные контрольные призы.</p></div></div><div class="bp-level-grid">${levels}</div></section><section class="grid cards-2 block"><article class="panel"><h3>Последние награды</h3><div class="bp-history">${bp.rewards.length ? bp.rewards.slice(0,12).map(x=>`<div><b>Уровень ${x.level}</b><span>${esc(x.label)}</span><small>${new Date(x.time).toLocaleString('ru-RU')}</small></div>`).join('') : '<p class="small">Пока наград нет.</p>'}</div></article><article class="panel"><h3>Полученные pass-промокоды</h3><div class="promo-used">${bp.vouchers.length ? bp.vouchers.slice(0,20).map(x=>`<span class="pill">${esc(x.code)} · ${fmt(x.amount)}</span>`).join('') : '<p class="small">Промокоды появятся на уровнях 7, 14, 21...</p>'}</div></article></section>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
