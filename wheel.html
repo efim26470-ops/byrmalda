@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <title>CS2 Case Lab — Бонусы</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar" id="siteHeader"></header>
+  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+
+  <main class="site-shell">
+    <div class="section-head"><div><span class="eyebrow">bonus zone</span><h2>Колесо, daily и промокоды</h2><p>Бонусная зона похожа по логике на reward-loop: можно забрать daily, прокрутить колесо и активировать локальный промокод.</p></div></div>
+    <section class="wheel-layout">
+      <div class="panel" style="padding:22px">
+        <div class="wheel-wrap"><div class="wheel-pointer"></div><div id="bonusWheel" class="wheel"></div></div>
+        <div class="row-actions" style="justify-content:center"><button id="spinWheelBtn" class="primary">Крутить колесо</button><span id="wheelHint" style="color:var(--muted)"></span></div>
+      </div>
+      <aside class="grid">
+        <div class="bonus-card">
+          <span class="eyebrow">daily reward</span>
+          <h3>Ежедневный бонус</h3>
+          <p>Раз в день можно получить 500 LabCoins.</p>
+          <button id="dailyBtn" class="primary">Забрать ◆ 500</button>
+        </div>
+        <div class="bonus-card">
+          <span class="eyebrow">promo</span>
+          <h3>Промокод</h3>
+          <p>Тестовые коды: <b>LAB2026</b>, <b>EFIM</b>, <b>CASELAB</b>.</p>
+          <div class="row-actions"><input id="promoInput" class="input" placeholder="Введи промокод" /><button id="promoBtn" class="ghost">Активировать</button></div>
+        </div>
+        <div class="bonus-card">
+          <span class="eyebrow">reward ads</span>
+          <h3>Монеты за рекламу</h3>
+          <p>Полноэкранная реклама твоих проектов на 10 секунд.</p>
+          <a class="primary" href="ads.html">Перейти к рекламе</a>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <footer>Кулдауны и награды можно менять в `app.js`.</footer>
+  <script src="app.js"></script>
+</body>
+</html>

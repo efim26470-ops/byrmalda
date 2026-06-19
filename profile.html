@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <title>CS2 Case Lab — Профиль</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar" id="siteHeader"></header>
+  <section class="live-feed"><div class="live-track" id="liveFeed"></div></section>
+
+  <main class="site-shell">
+    <section class="panel" style="padding:24px">
+      <span class="eyebrow">profile</span>
+      <h2>Профиль симулятора</h2>
+      <p>Статистика хранится локально в браузере. При очистке localStorage прогресс сбросится.</p>
+      <div class="grid profile-grid">
+        <div class="stat-card"><b>◆ <span id="profileBalance">0</span></b><span>баланс</span></div>
+        <div class="stat-card"><b>◆ <span id="profileSpent">0</span></b><span>потрачено</span></div>
+        <div class="stat-card"><b>◆ <span id="profileEarned">0</span></b><span>получено/продано</span></div>
+        <div class="stat-card"><b id="profileAds">0</b><span>реклам</span></div>
+        <div class="stat-card"><b id="profileUpgrades">0/0</b><span>апгрейды</span></div>
+        <div class="stat-card"><b id="profileBattles">0/0</b><span>баттлы</span></div>
+        <div class="stat-card"><b id="profileContracts">0</b><span>контракты</span></div>
+        <div class="stat-card"><button id="resetBtn" class="ghost">Сбросить прогресс</button><span>очистка localStorage</span></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>Для публикации на GitHub Pages загрузи все файлы в корень репозитория.</footer>
+  <script src="app.js"></script>
+</body>
+</html>
