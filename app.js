@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.8.2';
+  const VERSION = '31.9.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -46,6 +46,13 @@
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
+  const AD_CLICK_REWARD_MAX = 5000;
+  const AD_PROJECTS = Object.freeze([
+    {id:'worldcup', title:'World Cup 2026', url:'https://efim26470-ops.github.io/worldcup/', emoji:'🏆', desc:'Интерактивный футбольный проект: команды, матчи, таблицы, бомбардиры и стилизованные темы чемпионата.'},
+    {id:'fempriem', title:'FEM Приёмная комиссия', url:'https://efim26470-ops.github.io/Fempriem/', emoji:'🎓', desc:'Справочник абитуриента ФЭМ: направления, экзамены, формы обучения, цены, места и расчёт скидок.'},
+    {id:'byrmalda-mobile', title:'Byrmalda Mobile', url:'https://efim26470-ops.github.io/byrmaldaMOBILE/', emoji:'📱', desc:'Мобильная версия проекта: адаптированный интерфейс для телефона, PWA-логика и быстрый доступ с экрана iPhone.'},
+    {id:'project-prod', title:'Project Prod YouTube', url:'https://www.youtube.com/@proectprod', emoji:'▶️', desc:'YouTube-канал с видео, проектами, разбором учебных работ и демонстрациями разработок.'}
+  ]);
   const BATTLE_PASS_PRICE = 200000;
   const BATTLE_PASS_MAX_LEVEL = 100;
   const SEASONAL_PASS_PRICE = 20 * RUB_PER_USD; // $20, хранится в рублях
@@ -54,7 +61,11 @@
   const SEASONAL_PASS_SEASON_ID = 'summer-dragon-v1';
   const PROMO_CODES = Object.freeze({
     WELCOME30: 5000, EFIMDROP: 7500, IOSLAB: 3000, FASTOPEN: 2500, BATTLEFIX: 6000, RUBLELC: 10000, CASEKING: 15000, GREENLUCK: 4000, REDHUNT: 8000,
-    KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 20000, TEST100K: 15000
+    KNIFEDREAM: 25000, ARMORYPASS: 12000, STICKER2026: 2000, DAILYBOOST: 1500, MEGALAB: 20000, TEST100K: 15000,
+    WORLDCUP26: 9000, FEMSTART: 6500, MOBILELAB: 5500, PROJECTPROD: 7000, ADCLICK: 3500, VIEWBONUS: 2500, SKINSTART: 4500, CASEBOOST: 6000,
+    DRAGONHEAT: 12000, SEASON30: 8000, MINESLUCK: 5000, UPGRADE2X: 3000, UPGRADE10X: 10000, CONTRACTPLUS: 4200, BATTLEARENA: 7500, THEMEPACK: 2800,
+    VITALITYWIN: 6000, NAVINATION: 6000, FAZEUP: 6000, SPIRITDROP: 6000, CLOUDLUCK: 4000, FNATICOLD: 4000, FALCONSPEED: 4000, PARIVISION: 4000, VPPOWER: 4000, NINEZBOOST: 4000,
+    GUNGNIRDREAM: 18000, KATOWICE14: 14000, PATCHDROP: 2500, STICKERHUNT: 5000, AGENTMODE: 4500, DAILY2026: 2600
   });
   const DAY_KEY = () => new Date().toISOString().slice(0,10);
   const $ = (sel, root=document) => root.querySelector(sel);
@@ -218,7 +229,7 @@
   let currentCase = null;
   let upgradeMode = 2;
 
-  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,mines:0,minesWins:0,tx:[],pendingUpgrade:null,upgradeMode:2,contractSelected:[],lastWheelAt:0,adViews:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),minesGame:null,createdAt:Date.now(),savedAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,currency:'RUB',inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,mines:0,minesWins:0,tx:[],pendingUpgrade:null,upgradeMode:2,contractSelected:[],lastWheelAt:0,adViews:{},adClicks:{},usedPromos:[],battlePass:defaultBattlePass(),seasonalPass:defaultSeasonalPass(),minesGame:null,createdAt:Date.now(),savedAt:Date.now()}; }
   function defaultBattlePass(){ return {active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
   function defaultSeasonalPass(){ return {seasonId:SEASONAL_PASS_SEASON_ID,seasonStartedAt:Date.now(),active:false,level:0,activatedAt:0,current:{level:1,counts:{}},rewards:[],vouchers:[]}; }
   function normalizeSeasonalPass(sp, fallbackStart){
@@ -279,6 +290,7 @@
     s.contractSelected = Array.isArray(s.contractSelected) ? s.contractSelected : [];
     s.lastWheelAt = Math.max(0, Math.round(toNum(s.lastWheelAt,0)));
     s.adViews = (s.adViews && typeof s.adViews === 'object') ? s.adViews : {};
+    s.adClicks = (s.adClicks && typeof s.adClicks === 'object') ? s.adClicks : {};
     s.usedPromos = Array.isArray(s.usedPromos) ? s.usedPromos.map(x=>String(x).toUpperCase()).slice(0,100) : [];
     s.battlePass = normalizeBattlePass(s.battlePass);
     s.seasonalPass = normalizeSeasonalPass(s.seasonalPass, s.createdAt || Date.now());
@@ -321,7 +333,7 @@
       version: VERSION, balance: Math.max(0, Math.round(toNum(s.balance,15000))), currency: s.currency || 'RUB', inventory: s.inventory.map(compactInvItem).filter(Boolean).slice(0,700),
       opened:s.opened, earned:s.earned, spent:s.spent, sold:s.sold, upgrades:s.upgrades, contracts:s.contracts, battles:s.battles, wins:s.wins, mines:s.mines, minesWins:s.minesWins,
       tx:(s.tx||[]).slice(0,80).map(t=>({id:t.id||id(), text:String(t.text||'Операция').slice(0,120), amount:Math.round(toNum(t.amount,0)), time:Math.max(0,Math.round(toNum(t.time,Date.now())))})),
-      pendingUpgrade:s.pendingUpgrade||null, upgradeMode:s.upgradeMode||2, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[], minesGame:normalizeMinesGame(s.minesGame),
+      pendingUpgrade:s.pendingUpgrade||null, upgradeMode:s.upgradeMode||2, contractSelected:Array.isArray(s.contractSelected)?s.contractSelected.slice(0,10):[], lastWheelAt:s.lastWheelAt||0, adViews:s.adViews||{}, adClicks:s.adClicks||{}, usedPromos:Array.isArray(s.usedPromos)?s.usedPromos.slice(0,100):[], minesGame:normalizeMinesGame(s.minesGame),
       battlePass:normalizeBattlePass(s.battlePass), seasonalPass:normalizeSeasonalPass(s.seasonalPass, s.createdAt||Date.now()), createdAt:s.createdAt||Date.now(), savedAt:Date.now()
     };
   }
@@ -1048,6 +1060,7 @@
       if(a === 'claim-seasonal-pass') return claimSeasonalPassReward();
       if(a === 'spin-wheel') return spinWheel();
       if(a === 'start-ad') return startAd();
+      if(a === 'open-project'){ e.preventDefault(); return openProjectLink(btn.dataset.project || ''); }
       if(a === 'start-battle') return startBattle();
       if(a === 'make-contract') return makeContract();
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return; }
@@ -1673,14 +1686,48 @@
   }
 
   function todayAdViews(){ const k = DAY_KEY(); return Math.max(0, Math.round(toNum(state.adViews && state.adViews[k],0))); }
+  function todayAdClicks(){ const k = DAY_KEY(); state.adClicks = (state.adClicks && typeof state.adClicks === 'object') ? state.adClicks : {}; const day = state.adClicks[k]; return (day && typeof day === 'object') ? day : {}; }
   function renderAds(){
     const root = $('#adsRoot'); if(!root) return;
     const used = todayAdViews();
-    root.innerHTML = `<div class="ad-card"><div><span class="kicker">Реклама своих проектов</span><h2>10 секунд просмотра = ${fmt(AD_REWARD)}</h2><p>Окно рекламы нельзя закрыть до конца таймера. Лимит в статической версии: ${AD_DAILY_LIMIT} просмотров в сутки на браузер/устройство.</p><button class="btn primary huge" data-action="start-ad" ${used>=AD_DAILY_LIMIT?'disabled':''}>${used>=AD_DAILY_LIMIT?'Лимит на сегодня исчерпан':'Смотреть рекламу'}</button><p class="small">Сегодня использовано: <b>${used}/${AD_DAILY_LIMIT}</b></p></div><div class="project-grid">${projectCards()}</div></div>`;
+    const clicks = todayAdClicks();
+    const claimed = Object.keys(clicks).length;
+    root.innerHTML = `<div class="ad-projects-hero ad-card"><div><span class="kicker">Партнёрские переходы</span><h2>Перейди на проект и получи бонус</h2><p>Каждый ресурс можно открыть один раз в день за награду: случайный скин или баланс до ${fmt(AD_CLICK_REWARD_MAX)}. Переход открывается в новой вкладке, а бонус фиксируется локально в сохранении браузера.</p><div class="ad-mini-stats"><span>Сегодня получено: <b>${claimed}/${AD_PROJECTS.length}</b></span><span>Награда: <b>скин / до ${fmt(AD_CLICK_REWARD_MAX)}</b></span></div></div></div><div class="project-grid ad-project-grid">${projectCards()}</div><div class="ad-card ad-watch-card"><div><span class="kicker">Просмотр рекламы</span><h2>10 секунд просмотра = ${fmt(AD_REWARD)}</h2><p>Окно рекламы нельзя закрыть до конца таймера. Лимит в статической версии: ${AD_DAILY_LIMIT} просмотров в сутки на браузер/устройство.</p><button class="btn primary huge" data-action="start-ad" ${used>=AD_DAILY_LIMIT?'disabled':''}>${used>=AD_DAILY_LIMIT?'Лимит на сегодня исчерпан':'Смотреть рекламу'}</button><p class="small">Сегодня использовано: <b>${used}/${AD_DAILY_LIMIT}</b></p></div><div class="project-grid compact-projects">${projectCards(true)}</div></div>`;
   }
-  function projectCards(){
-    const p = [['Портфолио','Сайт-визитка и проекты','#'],['YouTube / видео','Ролики, конференции, обзоры','#'],['Подкаст','Финансы и учебные задания','#'],['GitHub','HTML-проекты и демо','#']];
-    return p.map(x=>`<a class="project-card" href="${x[2]}"><h3>${esc(x[0])}</h3><p>${esc(x[1])}</p></a>`).join('');
+  function projectCards(compact=false){
+    const clicks = todayAdClicks();
+    return AD_PROJECTS.map(p=>{
+      const done = !!clicks[p.id];
+      return `<a class="project-card ad-project-card ${done?'claimed':''} ${compact?'compact':''}" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer" data-action="open-project" data-project="${esc(p.id)}"><div class="project-icon">${esc(p.emoji)}</div><div><h3>${esc(p.title)}</h3><p>${esc(p.desc)}</p><span class="project-link">${done?'Бонус сегодня получен':'Перейти и получить бонус'} →</span></div></a>`;
+    }).join('');
+  }
+  function projectById(projectId){ return AD_PROJECTS.find(x => x.id === projectId) || null; }
+  function openProjectLink(projectId){
+    const project = projectById(projectId);
+    if(!project) return toast('Проект не найден','bad');
+    const k = DAY_KEY();
+    state.adClicks = (state.adClicks && typeof state.adClicks === 'object') ? state.adClicks : {};
+    state.adClicks[k] = (state.adClicks[k] && typeof state.adClicks[k] === 'object') ? state.adClicks[k] : {};
+    const already = !!state.adClicks[k][project.id];
+    try{ window.open(project.url, '_blank', 'noopener,noreferrer'); }catch(e){ location.href = project.url; }
+    if(already){ toast('Переход засчитан ранее сегодня. Завтра бонус снова будет доступен.','warn'); renderAds(); save(); return; }
+    state.adClicks[k][project.id] = {time:Date.now(), url:project.url};
+    if(cryptoRandom() < .45){
+      const pool = catalog.items.filter(x => toNum(x.value,0) >= 120 && toNum(x.value,0) <= AD_CLICK_REWARD_MAX);
+      const base = sample(pool.length ? pool : catalog.items);
+      const reward = addItem(base, 'project-ad');
+      addLive('Ты', reward);
+      addTx(`Переход: ${project.title} · скин`, 0);
+      toast(`Переход засчитан: получен ${reward.displayName || reward.name}`,'good');
+    }else{
+      const amount = Math.round(rnd(500, AD_CLICK_REWARD_MAX) / 100) * 100;
+      earn(amount, `Переход: ${project.title}`);
+      toast(`Переход засчитан: +${fmt(amount)}`,'good');
+    }
+    bpEvent('ad', {type:'project-click', project:project.id});
+    save();
+    renderAds();
+    renderGlobals();
   }
   function startAd(){
     if(busy.ad) return;
@@ -2034,6 +2081,7 @@
       if(a === 'redeem-promo'){ redeemPromo(); return true; }
       if(a === 'spin-wheel'){ spinWheel(); return true; }
       if(a === 'start-ad'){ startAd(); return true; }
+      if(a === 'open-project'){ openProjectLink(el.dataset.project || ''); return true; }
       if(a === 'start-battle'){ startBattle(); return true; }
       if(a === 'make-contract'){ makeContract(); return true; }
       if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return true; }
