@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '27.0.0';
+  const VERSION = '28.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -118,6 +118,8 @@
     const s = Object.assign(base, raw && typeof raw === 'object' ? raw : {});
     s.balance = toNum(s.balance, 15000);
     if(s.balance < 0 || !Number.isFinite(s.balance)) s.balance = 15000;
+    // v28: если старый сломанный save оставил 0 ₽LC на пустом новом аккаунте, возвращаем стартовый баланс.
+    if(s.balance === 0 && !((raw && raw.inventory && raw.inventory.length) || toNum(raw && raw.opened,0) || toNum(raw && raw.spent,0))) s.balance = 15000;
     ['opened','earned','spent','sold','upgrades','contracts','battles','wins'].forEach(k => s[k] = Math.max(0, Math.round(toNum(s[k],0))));
     s.inventory = Array.isArray(s.inventory) ? s.inventory.filter(Boolean).map(normalizeInvItem).filter(Boolean) : [];
     s.tx = Array.isArray(s.tx) ? s.tx.slice(0,60) : [];
@@ -371,6 +373,7 @@
       initInstallPrompt();
       initMobileTapBridge();
       bindEvents();
+      initDirectMobileActions();
       purgeOldCaches();
       // v23: service worker отключён, чтобы телефон не держал старый JS/картинки.
       // registerServiceWorker();
@@ -407,7 +410,7 @@
     }catch(err){
       console.error('Boot failed, emergency mode:', err);
       try{ addToasts(); }catch(e){}
-      try{ bindEvents(); initMobileTapBridge(); }catch(e){}
+      try{ bindEvents(); initDirectMobileActions(); initMobileTapBridge(); }catch(e){}
       try{ catalog = buildOfflineCatalog(); updateHeroShowcase(); route(); renderGlobals(); }catch(e){}
       try{ toast('Включён аварийный мобильный режим. Обнови страницу, если интерфейс загрузился не полностью.','warn'); }catch(e){}
     }
@@ -783,42 +786,51 @@
   }
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9а-яё]+/gi,'-').replace(/^-|-$/g,''); }
 
+  const ACTION_SELECTOR = '[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]';
+
+  function handleActionElement(btn, e){
+    if(!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return false;
+    try{ if(e){ e.preventDefault(); e.stopPropagation(); } }catch(err){}
+    if(btn.matches('[data-close-modal]')){ closeModal(btn.closest('.modal')); return true; }
+    if(btn.dataset.openCase){ openCaseModal(btn.dataset.openCase, true); return true; }
+    if(btn.dataset.viewCase){ openCaseModal(btn.dataset.viewCase, false); return true; }
+    if(btn.dataset.sell){ sellItem(btn.dataset.sell); return true; }
+    if(btn.dataset.upgradeItem){ state.pendingUpgrade = btn.dataset.upgradeItem; save(); location.href = 'upgrade.html'; return true; }
+    if(btn.dataset.contractItem){ toggleContract(btn.dataset.contractItem); route(); toast('Выбор контракта обновлён','good'); return true; }
+    const a = btn.dataset.action;
+    if(a === 'spin-current-case'){ spinCase(currentCase, {fast:false,count:1}); return true; }
+    if(a === 'spin-fast'){ spinCase(currentCase, {fast:true,count:1}); return true; }
+    if(a === 'open-again'){ spinCase(currentCase, {fast:false,count:1}); return true; }
+    if(a === 'open-again-fast'){ spinCase(currentCase, {fast:true,count:1}); return true; }
+    if(a === 'open-multi'){ spinCase(currentCase, {fast:true,count:btn.dataset.count||1}); return true; }
+    if(a === 'sell-batch'){ sellBatch((btn.dataset.uids||'').split(',').filter(Boolean)); return true; }
+    if(a === 'redeem-promo'){ redeemPromo(); return true; }
+    if(a === 'spin-wheel'){ spinWheel(); return true; }
+    if(a === 'start-ad'){ startAd(); return true; }
+    if(a === 'start-battle'){ startBattle(); return true; }
+    if(a === 'make-contract'){ makeContract(); return true; }
+    if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return true; }
+    if(a === 'do-upgrade'){ doUpgrade(); return true; }
+    if(a === 'sell-cheap'){ sellCheap(); return true; }
+    if(a === 'sell-all-inventory'){ sellAllInventory(); return true; }
+    if(a === 'reset-save'){ resetSave(); return true; }
+    if(a === 'export-save'){ exportSave(); return true; }
+    if(a === 'import-save'){ importSave(); return true; }
+    if(a === 'add-debug-coins'){ earn(10000, 'Тестовое начисление'); return true; }
+    if(a === 'install-pwa'){ installPWA(); return true; }
+    if(a === 'show-ios'){ showIOSGuide(); return true; }
+    return false;
+  }
+
   function bindEvents(){
     if(document.documentElement.dataset.bound === '1') return;
     document.documentElement.dataset.bound = '1';
     document.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action],[data-open-case],[data-view-case],[data-sell],[data-upgrade-item],[data-contract-item],[data-close-modal]');
-      if(!btn) return;
-      if(btn.__tapBridgeAt && Date.now() - btn.__tapBridgeAt < 650 && !e.__tapBridge){ e.preventDefault(); return; }
-      if(btn.matches('[data-close-modal]')) return closeModal(btn.closest('.modal'));
-      if(btn.dataset.openCase) return openCaseModal(btn.dataset.openCase, true);
-      if(btn.dataset.viewCase) return openCaseModal(btn.dataset.viewCase, false);
-      if(btn.dataset.sell) return sellItem(btn.dataset.sell);
-      if(btn.dataset.upgradeItem){ state.pendingUpgrade = btn.dataset.upgradeItem; save(); location.href = 'upgrade.html'; return; }
-      if(btn.dataset.contractItem){ toggleContract(btn.dataset.contractItem); route(); toast('Выбор контракта обновлён','good'); return; }
-      const a = btn.dataset.action;
-      if(a === 'spin-current-case') return spinCase(currentCase, {fast:false,count:1});
-      if(a === 'spin-fast') return spinCase(currentCase, {fast:true,count:1});
-      if(a === 'open-again') return spinCase(currentCase, {fast:false,count:1});
-      if(a === 'open-again-fast') return spinCase(currentCase, {fast:true,count:1});
-      if(a === 'open-multi') return spinCase(currentCase, {fast:true,count:btn.dataset.count||1});
-      if(a === 'sell-batch') return sellBatch((btn.dataset.uids||'').split(',').filter(Boolean));
-      if(a === 'redeem-promo') return redeemPromo();
-      if(a === 'spin-wheel') return spinWheel();
-      if(a === 'start-ad') return startAd();
-      if(a === 'start-battle') return startBattle();
-      if(a === 'make-contract') return makeContract();
-      if(a === 'clear-contract'){ state.contractSelected=[]; save(); route(); return; }
-      if(a === 'do-upgrade') return doUpgrade();
-      if(a === 'sell-cheap') return sellCheap();
-      if(a === 'sell-all-inventory') return sellAllInventory();
-      if(a === 'reset-save') return resetSave();
-      if(a === 'export-save') return exportSave();
-      if(a === 'import-save') return importSave();
-      if(a === 'add-debug-coins') return earn(10000, 'Тестовое начисление');
-      if(a === 'install-pwa') return installPWA();
-      if(a === 'show-ios') return showIOSGuide();
-    });
+      const target = e.target && e.target.closest ? e.target.closest(ACTION_SELECTOR) : null;
+      if(!target) return;
+      if(target.__directHandledAt && Date.now() - target.__directHandledAt < 650) { e.preventDefault(); return; }
+      handleActionElement(target, e);
+    }, true);
     document.addEventListener('input', e => {
       if(['invSearch','invRarity','invSort'].includes(e.target.id)) renderInventory();
       if(e.target.id === 'targetSearch') renderUpgradeTargets();
@@ -831,53 +843,64 @@
     document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); if(e.key === 'Enter' && e.target && e.target.id === 'promoInput') redeemPromo(); });
   }
 
+  function wireDirectMobileActions(root=document){
+    try{
+      $$(ACTION_SELECTOR, root).forEach(el => {
+        if(el.__wiredV28) return;
+        el.__wiredV28 = true;
+        const direct = ev => {
+          if(el.disabled || el.getAttribute('aria-disabled') === 'true') return;
+          const now = Date.now();
+          if(el.__lastDirectAt && now - el.__lastDirectAt < 520){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){} return; }
+          el.__lastDirectAt = now;
+          el.__directHandledAt = now;
+          handleActionElement(el, ev);
+        };
+        el.addEventListener('touchend', direct, {passive:false});
+        el.addEventListener('pointerup', ev => { if(ev.pointerType === 'touch' || ev.pointerType === 'pen') direct(ev); }, {passive:false});
+        el.addEventListener('click', ev => {
+          // На iOS иногда click приходит без touchend: обрабатываем и его напрямую.
+          if(ev.__fromDocument) return;
+          direct(ev);
+        }, {passive:false});
+      });
+    }catch(e){ console.warn('wireDirectMobileActions failed', e); }
+  }
+
+  function initDirectMobileActions(){
+    if(document.documentElement.dataset.directMobile === '1') return;
+    document.documentElement.dataset.directMobile = '1';
+    wireDirectMobileActions(document);
+    try{
+      const obs = new MutationObserver(muts => {
+        for(const m of muts){
+          m.addedNodes && m.addedNodes.forEach(n => { if(n.nodeType === 1) wireDirectMobileActions(n); });
+        }
+      });
+      obs.observe(document.body || document.documentElement, {childList:true, subtree:true});
+    }catch(e){}
+  }
+
   function route(){
     state = bootLoaded ? bestState([state, loadState(false)]) : loadState();
     renderGlobals();
     setActiveNav();
     const page = document.body.dataset.page || 'home';
-    if(page === 'home') return renderHome();
-    if(page === 'cases') return renderCases();
-    if(page === 'inventory') return renderInventory();
-    if(page === 'upgrade') return renderUpgrade();
-    if(page === 'contracts') return renderContracts();
-    if(page === 'wheel') return renderWheel();
-    if(page === 'battle') return renderBattle();
-    if(page === 'ads') return renderAds();
-    if(page === 'promos') return renderPromos();
-    if(page === 'profile') return renderProfile();
-    if(page === 'install') return renderInstall();
-  }
-  function setActiveNav(){
-    const file = location.pathname.split('/').pop() || 'index.html';
-    $$('.navlinks a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === file));
-  }
-  function renderGlobals(){
-    state = normalizeState(state);
-    $$('.js-balance').forEach(x => x.textContent = fmt(state.balance));
-    $$('.js-inv-count').forEach(x => x.textContent = String(state.inventory.length));
-    $$('.js-version').forEach(x => x.textContent = VERSION);
-  }
-  function addToasts(){ if(!$('.toast-wrap')) document.body.insertAdjacentHTML('beforeend','<div class="toast-wrap"></div>'); }
-  function toast(text,type=''){
-    const wrap = $('.toast-wrap'); if(!wrap) return;
-    const el = document.createElement('div'); el.className = `toast ${type}`; el.textContent = text; wrap.appendChild(el);
-    setTimeout(() => { el.classList.add('out'); setTimeout(()=>el.remove(),260); }, 4200);
-  }
-  function openModal(sel){ const m = typeof sel === 'string' ? $(sel) : sel; if(m) m.classList.add('show'); }
-  function closeModal(m){ if(!m) return; if(m.dataset.locked === '1') return toast('Окно закроется после окончания таймера','warn'); m.classList.remove('show'); }
-
-  function seedLive(force=false){
-    if(live.length && !force) return;
-    live = [];
-    const items = catalog.items && catalog.items.length ? catalog.items : fallbackItems;
-    for(let i=0;i<12;i++){ const it = sample(items); live.push({user:sample(bots), item:it, value:Math.round((it.value||100)*rnd(.75,1.45))}); }
-  }
-  function fakeLive(){ const it = sample(catalog.items.length?catalog.items:fallbackItems); live.unshift({user:sample(bots),item:it,value:Math.round((it.value||100)*rnd(.8,1.5))}); live=live.slice(0,18); renderLive(); }
-  function addLive(user,item){ live.unshift({user,item,value:item.value||0}); live=live.slice(0,18); renderLive(); }
-  function renderLive(){
-    const root = $('#liveFeed'); if(!root) return;
-    root.innerHTML = live.map(x => `<div class="live-card" style="--rar:${x.item.rarityColor||'#60a5fa'}"><img src="${esc(imgSrc(x.item.image, svgSkin('CS2 Skin')))}" onerror="this.src='${svgSkin('CS2 Skin')}'" loading="lazy" referrerpolicy="no-referrer"><div><b>${esc(x.user)} выбил</b><small>${esc(x.item.name)} · ${fmt(x.value)}</small></div></div>`).join('');
+    try{
+      if(page === 'home') renderHome();
+      else if(page === 'cases') renderCases();
+      else if(page === 'inventory') renderInventory();
+      else if(page === 'upgrade') renderUpgrade();
+      else if(page === 'contracts') renderContracts();
+      else if(page === 'wheel') renderWheel();
+      else if(page === 'battle') renderBattle();
+      else if(page === 'ads') renderAds();
+      else if(page === 'promos') renderPromos();
+      else if(page === 'profile') renderProfile();
+      else if(page === 'install') renderInstall();
+    }finally{
+      wireDirectMobileActions(document);
+    }
   }
 
   function statCards(){ return `<div class="grid cards-4"><div class="stat"><small>Баланс</small><b class="js-balance">${fmt(state.balance)}</b></div><div class="stat"><small>Предметов</small><b>${state.inventory.length}</b></div><div class="stat"><small>Открыто кейсов</small><b>${state.opened}</b></div><div class="stat"><small>Заработано</small><b>${fmt(state.earned)}</b></div></div>`; }
@@ -950,6 +973,23 @@
     ];
     root.innerHTML = `<div class="notice"><b>Каталог обновлён:</b> классические CS2-кейсы, коллекции, quality-пулы, стикеры, агенты, брелоки и нашивки. Доступны x3/x5/x10 и быстрое открытие.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
   }
+  function openModal(sel){
+    const m = typeof sel === 'string' ? $(sel) : sel;
+    if(!m) return;
+    m.classList.add('show');
+    m.style.pointerEvents = 'auto';
+    try{ wireDirectMobileActions(m); }catch(e){}
+    try{ document.body.classList.add('modal-open'); }catch(e){}
+  }
+  function closeModal(sel){
+    const m = typeof sel === 'string' ? $(sel) : sel;
+    if(!m) return;
+    if(m.dataset && m.dataset.locked === '1') return;
+    m.classList.remove('show');
+    m.style.pointerEvents = 'none';
+    try{ if(!document.querySelector('.modal.show')) document.body.classList.remove('modal-open'); }catch(e){}
+  }
+
   function openCaseModal(caseId, autoSpin){
     const c = catalog.cases.find(x => x.id === caseId);
     if(!c) return toast('Кейс не найден','bad');
