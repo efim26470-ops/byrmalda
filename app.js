@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '22.0.0';
+  const VERSION = '23.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -17,7 +17,7 @@
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
   const RUB_PER_USD = 92;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v22';
+  const PRICE_VERSION = 'market-rub-v23';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -372,7 +372,7 @@
       initMobileTapBridge();
       bindEvents();
       purgeOldCaches();
-      // v22: service worker отключён, чтобы телефон не держал старый JS/картинки.
+      // v23: service worker отключён, чтобы телефон не держал старый JS/картинки.
       // registerServiceWorker();
       seedLive();
       renderLive();
@@ -587,7 +587,7 @@
     const c = color || '#ff7a18';
     const c2 = c === '#22c55e' ? '#064e3b' : c === '#ef4444' ? '#7f1d1d' : c === '#4b69ff' ? '#1e3a8a' : c === '#8b5cf6' ? '#4c1d95' : c === '#ec4899' ? '#831843' : '#111827';
     const icon = /knife/i.test(name) ? '★' : /glove/i.test(name) ? '✋' : /sticker|capsule|tournament/i.test(name) ? '◆' : /agent/i.test(name) ? '♟' : /charm|keychain/i.test(name) ? '✦' : /patch/i.test(name) ? '⬢' : /green/i.test(name) ? 'GREEN' : /red|covert/i.test(name) ? 'RED' : /blue|mil/i.test(name) ? 'BLUE' : /pink|classified/i.test(name) ? 'PINK' : 'CS2';
-    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v200c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
+    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v230c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
   }
   function createSpecialCase(idv,name,rar,pool,price,text){
     pool = (pool || []).filter(Boolean).slice(0,240);
@@ -1476,7 +1476,7 @@
     const root = $('#installRoot'); if(!root) return;
     const ios = isIOSDevice();
     const standalone = isStandaloneMode();
-    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v22:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
+    root.innerHTML = `<div class="grid cards-3 install-grid"><article class="panel install-card"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel install-card ${ios?'ios-device':''}"><span class="kicker">iPhone / iPad</span><h2>${standalone?'Открыто как приложение':'Добавить на экран Домой'}</h2><p>${standalone?'Сайт уже запущен в standalone-режиме iOS. Нижняя панель Safari скрыта, safe-area активна.':'Открой сайт именно в Safari: кнопка «Поделиться» → «На экран Домой». После установки будет полноэкранный режим с iOS-иконкой.'}</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button><div class="ios-mini-guide"><b>Быстро:</b> Safari → ⬆︎ Поделиться → На экран Домой → Добавить</div></article><article class="panel install-card"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block ios-notice"><b>iOS v23:</b> добавлены apple-touch-icon, viewport-fit=cover, safe-area отступы, standalone-режим, исправления тач-кликов, модалок и горизонтального скролла на iPhone. Для установки используй Safari, не встроенный браузер Telegram/Discord/VK.</div>`;
   }
 
   function normalizePromoCode(code){ return String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
