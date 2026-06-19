@@ -1,9 +1,13 @@
 (function(){
   'use strict';
 
-  const VERSION = '5.1.0';
-  const LS_KEY = 'cs2_case_lab_v5_state';
+  const VERSION = '6.0.0';
+  const LS_KEY = 'cs2_case_lab_v6_state';
   const API_CRATES = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/crates.json';
+  const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
+  const AD_DAILY_LIMIT = 10;
+  const AD_REWARD = 750;
+  const DAY_KEY = () => new Date().toISOString().slice(0,10);
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
   const clamp = (n,a,b) => Math.max(a, Math.min(b, n));
@@ -55,12 +59,12 @@
   ];
   let catalog = {items:fallbackItems, cases:fallbackCases, source:'fallback'};
   let state = loadState();
-  let busy = {case:false,wheel:false,battle:false,ad:false};
+  let busy = {case:false,wheel:false,battle:false,ad:false,upgrade:false};
   let live = [];
   let wheelDeg = 0;
   let currentCase = null;
 
-  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],createdAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},createdAt:Date.now()}; }
   function toNum(v,d=0){ const n = Number(String(v).replace(/\s/g,'').replace(',','.')); return Number.isFinite(n) ? n : d; }
   function normalizeState(raw){
     const base = defaultState();
@@ -71,6 +75,8 @@
     s.inventory = Array.isArray(s.inventory) ? s.inventory.filter(Boolean).map(normalizeInvItem).filter(Boolean) : [];
     s.tx = Array.isArray(s.tx) ? s.tx.slice(0,60) : [];
     s.contractSelected = Array.isArray(s.contractSelected) ? s.contractSelected : [];
+    s.lastWheelAt = Math.max(0, Math.round(toNum(s.lastWheelAt,0)));
+    s.adViews = (s.adViews && typeof s.adViews === 'object') ? s.adViews : {};
     return s;
   }
   function normalizeInvItem(it){
@@ -135,6 +141,8 @@
 
   async function boot(){
     addToasts();
+    initInstallPrompt();
+    registerServiceWorker();
     renderGlobals();
     bindEvents();
     seedLive();
@@ -166,21 +174,48 @@
     }
   }
   function buildCatalog(crates){
-    const preferred = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case'];
+    const preferredCases = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case','Glove Case','Operation Broken Fang Case','Chroma 3 Case','Falchion Case','Shadow Case','Winter Offensive Weapon Case'];
+    const preferredCollections = ['The Anubis Collection','The 2021 Mirage Collection','The 2021 Dust 2 Collection','The 2021 Vertigo Collection','The Ancient Collection','The Norse Collection','The Canals Collection','The St. Marc Collection','The Cobblestone Collection','The Cache Collection','The Overpass Collection','The Gods and Monsters Collection','The Chop Shop Collection','The Control Collection','The Havoc Collection'];
     const casesRaw = crates.filter(c => c && c.type === 'Case' && Array.isArray(c.contains) && c.contains.length > 6);
-    const picked = [];
-    preferred.forEach(n => { const f = casesRaw.find(c => c.name === n); if(f) picked.push(f); });
-    casesRaw.forEach(c => { if(picked.length < 16 && !picked.includes(c)) picked.push(c); });
+    const collectionsRaw = crates.filter(c => c && c.type === 'Collection' && Array.isArray(c.contains) && c.contains.length > 6);
+    const pickedCases = [];
+    preferredCases.forEach(n => { const f = casesRaw.find(c => c.name === n); if(f) pickedCases.push(f); });
+    casesRaw.forEach(c => { if(pickedCases.length < 24 && !pickedCases.includes(c)) pickedCases.push(c); });
+    const pickedCollections = [];
+    preferredCollections.forEach(n => { const f = collectionsRaw.find(c => c.name === n); if(f) pickedCollections.push(f); });
+    collectionsRaw.forEach(c => { if(pickedCollections.length < 16 && !pickedCollections.includes(c)) pickedCollections.push(c); });
+
     const all = new Map();
-    const cases = picked.slice(0,16).map((c,idx) => {
+    function mapCrate(c, idx, kind='case'){
       const items = [];
       [...(c.contains||[]), ...(c.contains_rare||[])].forEach(raw => {
         const it = apiItem(raw);
         if(it){ items.push(it); all.set(it.id,it); }
       });
-      return {id:c.id || slug(c.name), name:c.name, price:calcPrice(items, idx), image:c.image || svgCase(c.name), items, source:'CSGO-API', rareText:c.loot_list && c.loot_list.footer ? c.loot_list.footer : 'Редкий спецпредмет внутри'};
-    }).filter(c => c.items.length);
-    return {items:Array.from(all.values()), cases, source:'CSGO-API'};
+      const price = calcPrice(items, idx, kind);
+      return {id:(kind==='collection'?'col-':'case-') + (c.id || slug(c.name)), name:c.name, price, image:c.image || svgCase(c.name), items, source:kind==='collection'?'CS2 Collection':'CS2 Case', kind, rareText:c.loot_list && c.loot_list.footer ? c.loot_list.footer : (kind==='collection'?'Коллекция CS2 с реальными названиями предметов.':'Редкий спецпредмет внутри')};
+    }
+    const cases = [];
+    pickedCases.forEach((c,idx) => { const mapped = mapCrate(c, idx, 'case'); if(mapped.items.length) cases.push(mapped); });
+    pickedCollections.forEach((c,idx) => { const mapped = mapCrate(c, idx, 'collection'); if(mapped.items.length) cases.push(mapped); });
+
+    let items = Array.from(all.values());
+    if(items.length < 20) items = fallbackItems;
+    const specialGroups = [
+      ['quality-milspec','Mil-Spec Case','Mil-Spec Grade', items.filter(i => i.rarity === 'Mil-Spec Grade'), 420, 'Кейс только с Mil-Spec предметами.'],
+      ['quality-restricted','Restricted Case','Restricted', items.filter(i => i.rarity === 'Restricted'), 790, 'Кейс только с Restricted предметами.'],
+      ['quality-classified','Classified Case','Classified', items.filter(i => i.rarity === 'Classified'), 1350, 'Кейс только с Classified предметами.'],
+      ['quality-covert','Covert Case','Covert', items.filter(i => i.rarity === 'Covert'), 2400, 'Кейс только с Covert предметами.'],
+      ['special-knives','Knife Case','Exceedingly Rare', items.filter(i => i.name.startsWith('★') && !/gloves/i.test(i.name)), 5200, 'Отдельный пул ножей.'],
+      ['special-gloves','Gloves Case','Extraordinary', items.filter(i => /gloves/i.test(i.name)), 5000, 'Отдельный пул перчаток.'],
+      ['special-rare','Knives & Gloves Case','Exceedingly Rare', items.filter(i => i.name.startsWith('★') || /gloves/i.test(i.name)), 6200, 'Ножи и перчатки в одном дорогом кейсе.']
+    ];
+    specialGroups.forEach(([idv,name,rar,pool,price,text]) => {
+      if(pool.length >= 3){
+        cases.push({id:idv, name, price, image:svgCase(name.replace(' Case','')), items:pool.map(x => Object.assign({}, x, {weight: rar.includes('Covert') ? 10 : (rar.includes('Rare')||rar==='Extraordinary'? 4 : 22)})), source:'Quality Pool', kind:'special', rareText:text});
+      }
+    });
+    return {items, cases, source:'CSGO-API'};
   }
   function apiItem(raw){
     if(!raw || !raw.name) return null;
@@ -189,9 +224,10 @@
     const isRare = raw.name.startsWith('★') || ['Exceedingly Rare','Extraordinary'].includes(r);
     return {id:raw.id || slug(raw.name), name:raw.name, rarity:r, rarityColor:(raw.rarity && raw.rarity.color) || rarityColors[r] || '#60a5fa', image:raw.image || svgSkin(raw.name), value:Math.round(base * (isRare?1.18:1) * rnd(.85,1.28)), weight:rarityWeight[r] || 7};
   }
-  function calcPrice(items, idx){
+  function calcPrice(items, idx, kind='case'){
     const avg = items.reduce((s,x)=>s+(x.value||0),0) / Math.max(1,items.length);
-    return clamp(Math.round(avg*.55 + 360 + idx*25), 350, 2200);
+    const mult = kind === 'collection' ? .48 : kind === 'special' ? .62 : .55;
+    return clamp(Math.round(avg*mult + 340 + idx*18), 250, kind === 'special' ? 6800 : 2600);
   }
   function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9а-яё]+/gi,'-').replace(/^-|-$/g,''); }
 
@@ -219,6 +255,8 @@
       if(a === 'export-save') return exportSave();
       if(a === 'import-save') return importSave();
       if(a === 'add-debug-coins') return earn(10000, 'Тестовое начисление');
+      if(a === 'install-pwa') return installPWA();
+      if(a === 'show-ios') return showIOSGuide();
     });
     document.addEventListener('input', e => {
       if(['invSearch','invRarity','invSort'].includes(e.target.id)) renderInventory();
@@ -229,7 +267,7 @@
       if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value; save(); renderUpgrade(); }
       if(e.target.id === 'battleCase') renderBattleInfo();
     });
-    document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(closeModal); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); });
   }
 
   function route(){
@@ -245,6 +283,7 @@
     if(page === 'battle') return renderBattle();
     if(page === 'ads') return renderAds();
     if(page === 'profile') return renderProfile();
+    if(page === 'install') return renderInstall();
   }
   function setActiveNav(){
     const file = location.pathname.split('/').pop() || 'index.html';
@@ -263,7 +302,7 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(()=>el.remove(),260); }, 4200);
   }
   function openModal(sel){ const m = typeof sel === 'string' ? $(sel) : sel; if(m) m.classList.add('show'); }
-  function closeModal(m){ if(m) m.classList.remove('show'); }
+  function closeModal(m){ if(!m) return; if(m.dataset.locked === '1') return toast('Окно закроется после окончания таймера','warn'); m.classList.remove('show'); }
 
   function seedLive(force=false){
     if(live.length && !force) return;
@@ -283,8 +322,10 @@
     const buttons = opts.buttons ? `<div class="item-actions">${opts.buttons}</div>` : '';
     return `<article class="item-card ${opts.selected?'selected':''}" data-uid="${esc(it.uid||'')}" data-item-id="${esc(it.id||'')}" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="item-art"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}"></div><h4>${esc(it.displayName||it.name)}</h4><small>${esc(it.rarity||'Skin')}${it.wear?` · ${esc(it.wear)}`:''}${it.float?` · ${esc(it.float)}`:''}</small><div class="value-row"><b>${fmt(it.value)}</b>${opts.badge?`<span class="pill">${esc(opts.badge)}</span>`:''}</div>${buttons}</article>`;
   }
-  function caseCard(c){ return `<article class="case-card"><img class="case-img" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}"><h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`; }
-
+  function caseCard(c){
+    const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
+    return `<article class="case-card"><span class="case-kind">${esc(kindLabel)}</span><img class="case-img" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'" alt="${esc(c.name)}"><h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
+  }
   function renderHome(){
     const root = $('#homeRoot'); if(!root) return;
     const top = [...catalog.items].sort((a,b)=>b.value-a.value).slice(0,8);
@@ -292,16 +333,25 @@
   }
   function renderCases(){
     const root = $('#casesRoot'); if(!root) return;
-    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> баланс хранится в новом save-ключе, поэтому старые сломанные сохранения не мешают. Для локального теста запускай <b>start-local.bat</b> из папки проекта.</div><div class="case-grid grid">${catalog.cases.map(caseCard).join('')}</div>`;
+    const groups = [
+      ['Официальные кейсы', catalog.cases.filter(c=>c.kind==='case')],
+      ['Коллекции CS2', catalog.cases.filter(c=>c.kind==='collection')],
+      ['Кейсы по качеству', catalog.cases.filter(c=>c.kind==='special')]
+    ];
+    root.innerHTML = `<div class="notice"><b>V${VERSION}:</b> сайт работает на GitHub Pages и может открываться как обычная ссылка. Локальный .bat больше не нужен для пользователя, он оставлен только как быстрый тестовый вариант.</div>${groups.map(([title,arr]) => arr.length ? `<section class="block"><div class="head"><h2>${title}</h2><p>${arr.length} шт.</p></div><div class="case-grid grid">${arr.map(caseCard).join('')}</div></section>` : '').join('')}`;
   }
   function openCaseModal(caseId, autoSpin){
     const c = catalog.cases.find(x => x.id === caseId);
     if(!c) return toast('Кейс не найден','bad');
     currentCase = c.id;
     $('#caseModalTitle').textContent = c.name;
-    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside"><img class="case-img big" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'"><div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть за ${fmt(c.price)}</button><button class="btn" data-action="add-debug-coins">+10 000 LC для теста</button><p class="small">Списание происходит сразу. Начисление предмета — после остановки рулетки.</p></aside><section><div class="roulette-box"><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${c.items.map(x=>itemCard(x,{badge:'шанс'})).join('')}</div></section></div>`;
+    const content = [...c.items].sort((a,b)=>(rarityValue[a.rarity]||0)-(rarityValue[b.rarity]||0)).map(x=>caseContentCard(x)).join('');
+    $('#caseModalBody').innerHTML = `<div class="case-open-layout"><aside class="open-aside"><img class="case-img big" src="${esc(c.image||svgCase(c.name))}" onerror="this.src='${svgCase(c.name)}'"><div class="notice">Цена открытия: <b>${fmt(c.price)}</b><br>${esc(c.rareText||'Внутри могут быть редкие предметы.')}</div><button class="btn primary huge" data-action="spin-current-case">Открыть за ${fmt(c.price)}</button><button class="btn" data-action="add-debug-coins">+10 000 LC для теста</button><p class="small">Стрелка по центру показывает предмет, который выпадет после остановки.</p></aside><section class="case-main"><div class="roulette-box"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip" id="rouletteStrip">${Array.from({length:20},()=>rollCard(weighted(c))).join('')}</div></div><h3>Содержимое кейса</h3><div class="case-contents">${content}</div></section></div>`;
     openModal('#caseModal');
     if(autoSpin) setTimeout(() => spinCase(c.id), 120);
+  }
+  function caseContentCard(it){
+    return `<article class="content-card" style="--rar:${it.rarityColor||'#60a5fa'}"><div class="content-art"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'CS2 Skin')}'" alt="${esc(it.name)}"></div><b>${esc(it.name)}</b><small>${esc(it.rarity||'Skin')}</small><span>${fmt(it.value)}</span></article>`;
   }
   function rollCard(it){ return `<div class="roll-card" style="--rar:${it.rarityColor||'#60a5fa'}"><img src="${esc(it.image||svgSkin(it.name))}" onerror="this.src='${svgSkin(it.name||'Skin')}'"><b>${esc(it.name)}</b></div>`; }
   function weighted(c){
@@ -382,7 +432,7 @@
     const selected = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
     if(selected) state.pendingUpgrade = selected.uid;
     const options = state.inventory.map(x=>`<option value="${esc(x.uid)}" ${selected&&selected.uid===x.uid?'selected':''}>${esc(x.displayName||x.name)} · ${fmt(x.value)}</option>`).join('');
-    root.innerHTML = `<div class="upgrade-layout"><aside class="panel"><h3>Твой предмет</h3>${selected?itemCard(selected):'<div class="empty">Нет предмета</div>'}<select id="upgradeSource">${options}</select><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade" ${selected?'':'disabled'}>Апгрейд</button><p class="small">При проигрыше предмет исчезает. Это локальный фан-симулятор.</p></aside><section><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
+    root.innerHTML = `<div class="upgrade-layout"><aside class="panel"><h3>Твой предмет</h3>${selected?itemCard(selected):'<div class="empty">Нет предмета</div>'}<select id="upgradeSource">${options}</select><div id="upgradeChance"></div><button class="btn primary huge" data-action="do-upgrade" ${selected?'':'disabled'}>Апгрейд</button><p class="small">При проигрыше предмет исчезает. Это локальный фан-симулятор.</p></aside><section><div class="upgrade-roulette" id="upgradeRoulette"><div class="upgrade-arrow"></div><div class="upgrade-lane" id="upgradeLane"><span class="zone lose">LOSE</span><span class="zone win">WIN</span><span class="zone lose">LOSE</span></div></div><div class="filters"><input id="targetSearch" placeholder="Поиск цели"></div><div id="upgradeTargets" class="target-row"></div></section></div>`;
     renderUpgradeTargets();
   }
   function renderUpgradeTargets(){
@@ -404,16 +454,33 @@
   function updateUpgradeChance(){
     const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0] || null;
     const ch = chance(src,currentTarget);
-    const el = $('#upgradeChance'); if(el) el.innerHTML = src && currentTarget ? `<p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '';
+    const el = $('#upgradeChance');
+    if(el) el.innerHTML = src && currentTarget ? `<p>Цель: <b>${esc(currentTarget.name)}</b> · ${fmt(currentTarget.value)}</p><div class="chance"><span style="width:${ch}%"></span></div><b>${ch.toFixed(2)}%</b>` : '';
+    const win = $('#upgradeLane .win'); if(win) win.style.width = `${clamp(ch,4,76)}%`;
   }
   function doUpgrade(){
+    if(busy.upgrade) return toast('Апгрейд уже крутится','warn');
     const src = state.inventory.find(x=>x.uid===state.pendingUpgrade) || state.inventory[0];
     const tgt = currentTarget;
     if(!src || !tgt) return toast('Выбери предмет и цель','bad');
-    const ch = chance(src,tgt); removeItems(src.uid); state.upgrades += 1;
-    if(Math.random()*100 <= ch){ const win = addItem(tgt,'upgrade'); state.pendingUpgrade=win.uid; addLive('Ты',win); toast(`Апгрейд успешен: ${win.displayName}`,'good'); }
-    else{ state.pendingUpgrade=null; toast('Апгрейд не прошёл, предмет сгорел','bad'); }
-    save(); renderUpgrade();
+    const ch = chance(src,tgt);
+    busy.upgrade = true;
+    const btn = $('[data-action="do-upgrade"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
+    const lane = $('#upgradeLane');
+    const success = Math.random()*100 <= ch;
+    const winStart = 50 - ch/2;
+    const winEnd = 50 + ch/2;
+    const stopPercent = success ? rnd(winStart+1, winEnd-1) : (Math.random()<.5 ? rnd(2, Math.max(3,winStart-1)) : rnd(Math.min(97,winEnd+1),98));
+    if(lane){
+      lane.style.transition='none'; lane.style.transform='translateX(0)'; lane.getBoundingClientRect();
+      requestAnimationFrame(()=>{ lane.style.transition='transform 3.6s cubic-bezier(.08,.75,.08,1)'; lane.style.transform=`translateX(calc(-${stopPercent}% + 50%))`; });
+    }
+    setTimeout(()=>{
+      removeItems(src.uid); state.upgrades += 1;
+      if(success){ const win = addItem(tgt,'upgrade'); state.pendingUpgrade=win.uid; addLive('Ты',win); toast(`Апгрейд успешен: ${win.displayName}`,'good'); showDrop(win,null); }
+      else{ state.pendingUpgrade=null; toast('Апгрейд не прошёл, предмет сгорел','bad'); }
+      busy.upgrade=false; save(); renderUpgrade();
+    }, 3900);
   }
 
   function toggleContract(uid){
@@ -442,19 +509,26 @@
     toast(`Контракт создан: ${reward.displayName}`,'good');
   }
 
+  function cooldownLeft(){ return Math.max(0, (state.lastWheelAt || 0) + WHEEL_COOLDOWN - Date.now()); }
+  function formatTime(ms){ const s=Math.ceil(ms/1000); const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const sec=s%60; return h>0?`${h}ч ${m}м ${sec}с`:`${m}м ${sec}с`; }
   function renderWheel(){
     const root = $('#wheelRoot'); if(!root) return;
-    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel">Крутить бонусное колесо</button><div class="notice">Колесо без кулдауна для теста. После остановки сразу начисляет LC или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
+    const left = cooldownLeft();
+    root.innerHTML = `<div class="wheel-page"><div class="wheel-pointer"></div><div class="wheel" id="wheel"><span>LAB</span></div><button class="btn primary huge" data-action="spin-wheel" ${left?'disabled':''}>${left?'Доступно через '+formatTime(left):'Крутить бонусное колесо'}</button><div class="notice">Лимит: 1 прокрутка в 2 часа. После остановки сразу начисляет LC или предмет.</div><div id="wheelResult" class="wheel-result"></div></div>`;
+    if(left) setTimeout(renderWheel, Math.min(left, 1000));
   }
   function spinWheel(){
     if(busy.wheel) return toast('Колесо уже крутится','warn');
+    const left = cooldownLeft();
+    if(left) return toast(`Колесо будет доступно через ${formatTime(left)}`,'warn');
     busy.wheel = true;
+    state.lastWheelAt = Date.now(); save();
     const btn = $('[data-action="spin-wheel"]'); if(btn){ btn.disabled=true; btn.textContent='Крутится...'; }
     const rewards = [
       ['+250 LC','coins',250],['+500 LC','coins',500],['+750 LC','coins',750],['+1 000 LC','coins',1000],['+2 500 LC','coins',2500],['Промо +1 500 LC','coins',1500],['Случайный скин','item',0],['Редкий скин','rare',0]
     ];
     const idx = Math.floor(Math.random()*rewards.length);
-    wheelDeg += 360*5 + (360 - idx*45) + rnd(8,35);
+    wheelDeg += 360*6 + (360 - idx*45) + rnd(8,35);
     const wh = $('#wheel'); if(wh) wh.style.transform = `rotate(${wheelDeg}deg)`;
     setTimeout(()=>{
       const [label,type,amount] = rewards[idx];
@@ -464,26 +538,41 @@
         if(type === 'rare') pool = catalog.items.filter(x => ['Classified','Covert','Exceedingly Rare','Extraordinary'].includes(x.rarity));
         const it = addItem(sample(pool.length?pool:catalog.items),'wheel'); addLive('Ты',it); $('#wheelResult').innerHTML = itemCard(it,{badge:'колесо'});
       }
-      busy.wheel=false; if(btn){ btn.disabled=false; btn.textContent='Крутить бонусное колесо'; }
+      busy.wheel=false; renderWheel();
     }, 3300);
   }
 
+  function todayAdViews(){ const k = DAY_KEY(); return Math.max(0, Math.round(toNum(state.adViews && state.adViews[k],0))); }
   function renderAds(){
     const root = $('#adsRoot'); if(!root) return;
-    root.innerHTML = `<div class="ad-card"><div><span class="kicker">Реклама своих проектов</span><h2>10 секунд просмотра = 750 LC</h2><p>Это имитация рекламной страницы под твои GitHub Pages, видео, подкасты и учебные проекты.</p><button class="btn primary huge" data-action="start-ad">Смотреть рекламу</button><div class="progress"><span id="adProgress"></span></div><p id="adTimer">Готово к просмотру</p></div><div class="project-grid">${projectCards()}</div></div>`;
+    const used = todayAdViews();
+    root.innerHTML = `<div class="ad-card"><div><span class="kicker">Реклама своих проектов</span><h2>10 секунд просмотра = ${fmt(AD_REWARD)}</h2><p>Окно рекламы нельзя закрыть до конца таймера. Лимит в статической версии: ${AD_DAILY_LIMIT} просмотров в сутки на браузер/устройство.</p><button class="btn primary huge" data-action="start-ad" ${used>=AD_DAILY_LIMIT?'disabled':''}>${used>=AD_DAILY_LIMIT?'Лимит на сегодня исчерпан':'Смотреть рекламу'}</button><p class="small">Сегодня использовано: <b>${used}/${AD_DAILY_LIMIT}</b></p></div><div class="project-grid">${projectCards()}</div></div>`;
   }
   function projectCards(){
     const p = [['Портфолио','Сайт-визитка и проекты','#'],['YouTube / видео','Ролики, конференции, обзоры','#'],['Подкаст','Финансы и учебные задания','#'],['GitHub','HTML-проекты и демо','#']];
     return p.map(x=>`<a class="project-card" href="${x[2]}"><h3>${esc(x[0])}</h3><p>${esc(x[1])}</p></a>`).join('');
   }
   function startAd(){
-    if(busy.ad) return; busy.ad = true;
-    const btn = $('[data-action="start-ad"]'); const bar = $('#adProgress'); const timer = $('#adTimer');
-    if(btn){ btn.disabled=true; btn.textContent='Смотри рекламу...'; }
-    let sec = 10; if(bar) bar.style.width='0%'; if(timer) timer.textContent='10 сек.';
+    if(busy.ad) return;
+    const used = todayAdViews();
+    if(used >= AD_DAILY_LIMIT) return toast('Лимит рекламы на сегодня исчерпан','warn');
+    busy.ad = true;
+    const modal = document.createElement('div');
+    modal.className = 'modal show ad-lock-modal'; modal.dataset.locked = '1';
+    modal.innerHTML = `<div class="modal-card ad-watch"><div class="modal-head"><h3>Реклама проекта</h3><button class="close" data-close-modal title="Закроется после таймера">×</button></div><div class="modal-body"><div class="ad-card"><div><span class="kicker">Просмотр ${AD_REWARD} LC</span><h2 id="adLockTitle">Осталось 10 секунд</h2><p>Закрытие заблокировано до конца просмотра.</p><div class="progress"><span id="adProgress"></span></div><p id="adTimer">10 сек.</p></div><div class="project-grid">${projectCards()}</div></div></div></div>`;
+    document.body.appendChild(modal);
+    const bar = $('#adProgress', modal); const timer = $('#adTimer', modal); const title = $('#adLockTitle', modal);
+    let sec = 10; if(bar) bar.style.width='0%';
     const int = setInterval(()=>{
-      sec--; if(bar) bar.style.width = `${(10-sec)*10}%`; if(timer) timer.textContent = sec>0 ? `${sec} сек.` : 'Готово';
-      if(sec <= 0){ clearInterval(int); earn(750,'Просмотр рекламы'); busy.ad=false; if(btn){ btn.disabled=false; btn.textContent='Смотреть рекламу'; } }
+      sec--; if(bar) bar.style.width = `${(10-sec)*10}%`; if(timer) timer.textContent = sec>0 ? `${sec} сек.` : 'Готово'; if(title) title.textContent = sec>0 ? `Осталось ${sec} сек.` : 'Просмотр завершён';
+      if(sec <= 0){
+        clearInterval(int);
+        const k = DAY_KEY(); state.adViews[k] = todayAdViews() + 1;
+        earn(AD_REWARD,'Просмотр рекламы');
+        busy.ad=false; modal.dataset.locked='0';
+        modal.querySelector('.close').textContent = '×';
+        setTimeout(()=>{ closeModal(modal); modal.remove(); renderAds(); }, 700);
+      }
     },1000);
   }
 
@@ -517,9 +606,38 @@
     }, 3700);
   }
 
+  let deferredInstallPrompt = null;
+  function initInstallPrompt(){
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $$('.js-install-ready').forEach(x=>x.textContent='Готово к установке'); });
+  }
+  function registerServiceWorker(){
+    if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+  async function installPWA(){
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice.catch(()=>null);
+      deferredInstallPrompt = null;
+      return;
+    }
+    toast('Если кнопка установки недоступна: Chrome/Edge → меню ⋮ → Установить приложение. На iOS используй инструкцию ниже.','warn');
+  }
+  function showIOSGuide(){
+    let modal = $('#iosGuideModal');
+    if(!modal){
+      document.body.insertAdjacentHTML('beforeend', `<div class="modal" id="iosGuideModal"><div class="modal-card"><div class="modal-head"><h3>Как добавить на экран iPhone</h3><button class="close" data-close-modal>×</button></div><div class="modal-body"><div class="panel"><ol class="steps"><li>Открой сайт в Safari.</li><li>Нажми кнопку «Поделиться».</li><li>Выбери «На экран Домой».</li><li>Подтверди название CS2 Case Lab.</li></ol><p>После этого сайт будет открываться как обычная иконка приложения.</p></div></div></div></div>`);
+      modal = $('#iosGuideModal');
+    }
+    openModal(modal);
+  }
+  function renderInstall(){
+    const root = $('#installRoot'); if(!root) return;
+    root.innerHTML = `<div class="grid cards-3"><article class="panel"><span class="kicker">Windows / Chrome / Edge</span><h2>Установить как приложение</h2><p>На GitHub Pages сайт можно открыть с любого устройства. На Windows кнопка вызовет установку PWA, если браузер поддерживает её.</p><button class="btn primary huge" data-action="install-pwa">Установить на Windows</button><p class="small js-install-ready">Если кнопка не появилась: меню браузера → «Установить приложение».</p></article><article class="panel"><span class="kicker">iPhone / iPad</span><h2>Иконка на главный экран</h2><p>Для iOS установка идёт через Safari, без exe и без App Store.</p><button class="btn blue huge" data-action="show-ios">Показать инструкцию iOS</button></article><article class="panel"><span class="kicker">Offline ZIP</span><h2>Скачать сборку</h2><p>ZIP можно распаковать на Windows и открыть <b>index.html</b> или залить содержимое на GitHub Pages.</p><a class="btn huge" href="download/cs2-case-lab-windows.zip" download>Скачать ZIP для Windows</a></article></div><div class="notice block"><b>Важно:</b> реальный лимит «10 реклам на IP» невозможен в чистом GitHub Pages без бэкенда. В этой версии лимит реализован честно для браузера/устройства через localStorage.</div>`;
+  }
+
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит v5-сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит v6-сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
     if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 LC?')) return;
