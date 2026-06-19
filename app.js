@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '25.0.0';
+  const VERSION = '26.0.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -17,7 +17,7 @@
   const API_ENDPOINTS = {crates:'crates.json', stickers:'stickers.json', agents:'agents.json', patches:'patches.json', keychains:'keychains.json', collectibles:'collectibles.json', skins:'skins.json', collections:'collections.json'};
   const RUB_PER_USD = 92;
   const CURRENCY = '₽LC';
-  const PRICE_VERSION = 'market-rub-v23';
+  const PRICE_VERSION = 'market-rub-v26';
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
   const AD_REWARD = 750;
@@ -372,13 +372,12 @@
       initMobileTapBridge();
       bindEvents();
       purgeOldCaches();
-      // v23: service worker отключён, чтобы телефон не держал старый JS/картинки.
-      // registerServiceWorker();
+      // v26: service worker полностью отключён, чтобы GitHub Pages/iOS не держали старую сборку.
       seedLive();
       renderLive();
       setInterval(fakeLive, 4800);
       routeLoading();
-      try{ state = await promiseTimeout(loadStateAsync(), 900, loadState(false)); }
+      try{ state = await promiseTimeout(loadStateAsync(), 700, loadState(false)); }
       catch(e){ console.warn('save load fallback', e); state = loadState(false); }
       bootLoaded = true;
       window.addEventListener('pagehide', () => { try{ save(); }catch(e){} });
@@ -386,17 +385,29 @@
       window.addEventListener('storage', e => { if(e.key === LS_KEY || e.key === BACKUP_KEY){ state = loadState(); renderGlobals(); } });
       renderGlobals();
       save();
-      catalog = await promiseTimeout(loadCatalog(), 6500, buildOfflineCatalog());
+
+      // ВАЖНО: страницы больше не ждут внешний API. Сразу рисуем резервный каталог,
+      // а онлайн-каталог пробуем подгрузить фоном. Поэтому разделы не зависают на «Загружаю…».
+      catalog = buildOfflineCatalog();
       updateHeroShowcase();
       seedLive(true);
       renderLive();
       route();
+
+      promiseTimeout(loadCatalog(), 6500, null).then(online => {
+        if(online && online.cases && online.cases.length){
+          catalog = online;
+          seedLive(true);
+          renderLive();
+          route();
+        }
+      }).catch(e => console.warn('background catalog failed', e));
     }catch(err){
       console.error('Boot failed, emergency mode:', err);
       try{ addToasts(); }catch(e){}
       try{ bindEvents(); initMobileTapBridge(); }catch(e){}
-      try{ catalog = buildOfflineCatalog(); updateHeroShowcase(); route(); renderGlobals(); }catch(e){}
-      try{ toast('Включён аварийный мобильный режим. Обнови страницу, если интерфейс загрузился не полностью.','warn'); }catch(e){}
+      try{ catalog = buildOfflineCatalog(); updateHeroShowcase(); seedLive(true); renderLive(); route(); renderGlobals(); }catch(e){}
+      try{ toast('Включён аварийный режим. Страницы работают на встроенном каталоге.','warn'); }catch(e){}
     }
   }
   function promiseTimeout(p, ms, fallback){
@@ -406,6 +417,12 @@
       Promise.resolve(p).then(v => { if(!done){ done = true; clearTimeout(t); resolve(v); } }).catch(() => { if(!done){ done = true; clearTimeout(t); resolve(fallback); } });
     });
   }
+  function updateHeroShowcase(){
+    // v26: главная витрина использует жестко заданные реальные URL в index.html.
+    // Эта функция оставлена специально, чтобы старые вызовы не ломали запуск app.js.
+    return true;
+  }
+
   function routeLoading(){ const r = $('[data-route-root]'); if(r) r.innerHTML = '<div class="empty">Загружаю данные...</div>'; }
 
   function purgeOldCaches(){
@@ -453,7 +470,6 @@
       return built;
     }catch(e){
       console.warn('CS2 API fallback:', e);
-      toast('Онлайн-каталог не загрузился — включил встроенный резервный пул со старыми кейсами. Механики всё равно работают.','warn');
       return buildOfflineCatalog();
     }
   }
