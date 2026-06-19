@@ -1,9 +1,10 @@
 (function(){
   'use strict';
 
-  const VERSION = '7.0.0';
-  const LS_KEY = 'cs2_case_lab_v7_state';
-  const LEGACY_KEYS = ['cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state'];
+  const VERSION = '8.0.0';
+  const LS_KEY = 'cs2_case_lab_state';
+  const BACKUP_KEY = 'cs2_case_lab_state_backup';
+  const LEGACY_KEYS = ['cs2_case_lab_v7_state','cs2_case_lab_v6_state','cs2_case_lab_v5_state','cs2_case_lab_v4_state','cs2_case_lab_v3_state','cs2_case_lab_v2_state','cs2_case_lab_state_backup'];
   const API_BASE = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/';
   const API_CRATES = API_BASE + 'crates.json';
   const API_STICKERS = API_BASE + 'stickers.json';
@@ -11,6 +12,8 @@
   const API_PATCHES = API_BASE + 'patches.json';
   const API_KEYCHAINS = API_BASE + 'keychains.json';
   const API_COLLECTIBLES = API_BASE + 'collectibles.json';
+  const API_SKINS = API_BASE + 'skins.json';
+  const API_COLLECTIONS = API_BASE + 'collections.json';
   const LC_PER_USD = 100;
   const WHEEL_COOLDOWN = 2 * 60 * 60 * 1000;
   const AD_DAILY_LIMIT = 10;
@@ -72,7 +75,7 @@
   let wheelDeg = 0;
   let currentCase = null;
 
-  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},createdAt:Date.now()}; }
+  function defaultState(){ return {version:VERSION,balance:15000,inventory:[],opened:0,earned:0,spent:0,sold:0,upgrades:0,contracts:0,battles:0,wins:0,tx:[],pendingUpgrade:null,contractSelected:[],lastWheelAt:0,adViews:{},createdAt:Date.now(),savedAt:Date.now()}; }
   function toNum(v,d=0){ const n = Number(String(v).replace(/\s/g,'').replace(',','.')); return Number.isFinite(n) ? n : d; }
   function normalizeState(raw){
     const base = defaultState();
@@ -92,26 +95,58 @@
     const r = it.rarity || 'Mil-Spec Grade';
     return Object.assign({}, it, {uid:it.uid||id(), name:it.name||it.displayName, displayName:it.displayName||it.name, rarity:r, rarityColor:it.rarityColor||rarityColors[r]||'#60a5fa', value:Math.max(1,Math.round(toNum(it.value,100))), image:it.image||svgSkin(it.name||'Skin')});
   }
-  function loadState(){
+  function allSaveKeys(){
+    const keys = new Set([LS_KEY, BACKUP_KEY, ...LEGACY_KEYS]);
     try{
-      const current = localStorage.getItem(LS_KEY);
-      if(current) return normalizeState(JSON.parse(current));
-      for(const key of LEGACY_KEYS){
-        const legacy = localStorage.getItem(key);
-        if(legacy){
-          const imported = normalizeState(JSON.parse(legacy));
-          imported.version = VERSION;
-          try{ localStorage.setItem(LS_KEY, JSON.stringify(imported)); }catch(e){}
-          return imported;
-        }
+      for(let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(k && /cs2_case_lab/i.test(k)) keys.add(k);
       }
-      return defaultState();
-    }
-    catch(e){ return defaultState(); }
+    }catch(e){}
+    return Array.from(keys);
+  }
+  function loadState(){
+    const candidates = [];
+    try{
+      for(const key of allSaveKeys()){
+        const raw = localStorage.getItem(key);
+        if(!raw) continue;
+        try{
+          const parsed = normalizeState(JSON.parse(raw));
+          parsed._key = key;
+          candidates.push(parsed);
+        }catch(e){}
+      }
+      if(candidates.length){
+        candidates.sort((a,b)=>{
+          const sa = toNum(a.savedAt || a.createdAt,0), sb = toNum(b.savedAt || b.createdAt,0);
+          if(sa !== sb) return sb - sa;
+          const ia = Array.isArray(a.inventory) ? a.inventory.length : 0;
+          const ib = Array.isArray(b.inventory) ? b.inventory.length : 0;
+          if(ia !== ib) return ib - ia;
+          return toNum(b.balance,0) - toNum(a.balance,0);
+        });
+        const best = candidates[0];
+        best.version = VERSION;
+        delete best._key;
+        try{
+          localStorage.setItem(LS_KEY, JSON.stringify(best));
+          localStorage.setItem(BACKUP_KEY, JSON.stringify(best));
+        }catch(e){}
+        return best;
+      }
+    }catch(e){}
+    return defaultState();
   }
   function save(){
     state = normalizeState(state);
-    try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){ console.warn('localStorage недоступен', e); }
+    state.version = VERSION;
+    state.savedAt = Date.now();
+    try{
+      const raw = JSON.stringify(state);
+      localStorage.setItem(LS_KEY, raw);
+      localStorage.setItem(BACKUP_KEY, raw);
+    }catch(e){ console.warn('localStorage недоступен', e); toast('Браузер не дал сохранить прогресс. Проверь private mode / запрет cookies.', 'bad'); }
     renderGlobals();
   }
   function addTx(text, amount){ state.tx.unshift({id:id(), text, amount:Math.round(amount), time:Date.now()}); state.tx = state.tx.slice(0,60); }
@@ -165,6 +200,8 @@
     initInstallPrompt();
     purgeOldCaches();
     registerServiceWorker();
+    window.addEventListener('pagehide', () => { try{ save(); }catch(e){} });
+    window.addEventListener('storage', e => { if(e.key === LS_KEY || e.key === BACKUP_KEY){ state = loadState(); renderGlobals(); } });
     renderGlobals();
     bindEvents();
     seedLive();
@@ -180,7 +217,10 @@
 
   function purgeOldCaches(){
     if('caches' in window){
-      caches.keys().then(keys => Promise.all(keys.filter(k => /cs2-case-lab-v[1-6]|cs2-case-lab-v5|cs2-case-lab-v6/.test(k)).map(k => caches.delete(k)))).catch(()=>{});
+      caches.keys().then(keys => Promise.all(keys.filter(k => /cs2-case-lab/i.test(k)).map(k => caches.delete(k)))).catch(()=>{});
+    }
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
     }
   }
 
@@ -195,8 +235,8 @@
   }
   async function loadCatalog(){
     try{
-      const [cratesRes, stickersRes, agentsRes, patchesRes, keychainsRes, collectiblesRes] = await Promise.allSettled([
-        loadJSON(API_CRATES), loadJSON(API_STICKERS), loadJSON(API_AGENTS), loadJSON(API_PATCHES), loadJSON(API_KEYCHAINS), loadJSON(API_COLLECTIBLES)
+      const [cratesRes, stickersRes, agentsRes, patchesRes, keychainsRes, collectiblesRes, skinsRes, collectionsRes] = await Promise.allSettled([
+        loadJSON(API_CRATES), loadJSON(API_STICKERS), loadJSON(API_AGENTS), loadJSON(API_PATCHES), loadJSON(API_KEYCHAINS), loadJSON(API_COLLECTIBLES), loadJSON(API_SKINS), loadJSON(API_COLLECTIONS)
       ]);
       const crates = cratesRes.status === 'fulfilled' ? cratesRes.value : [];
       const stickers = stickersRes.status === 'fulfilled' ? stickersRes.value : [];
@@ -204,7 +244,9 @@
       const patches = patchesRes.status === 'fulfilled' ? patchesRes.value : [];
       const keychains = keychainsRes.status === 'fulfilled' ? keychainsRes.value : [];
       const collectibles = collectiblesRes.status === 'fulfilled' ? collectiblesRes.value : [];
-      const built = buildCatalog({crates, stickers, agents, patches, keychains, collectibles});
+      const skins = skinsRes.status === 'fulfilled' ? skinsRes.value : [];
+      const collections = collectionsRes.status === 'fulfilled' ? collectionsRes.value : [];
+      const built = buildCatalog({crates, stickers, agents, patches, keychains, collectibles, skins, collections});
       if(built.cases.length < 8 || built.items.length < 30) throw new Error('empty catalog');
       return built;
     }catch(e){
@@ -238,9 +280,11 @@
     const patchesRaw = Array.isArray(data.patches) ? data.patches : [];
     const keychainsRaw = Array.isArray(data.keychains) ? data.keychains : [];
     const collectiblesRaw = Array.isArray(data.collectibles) ? data.collectibles : [];
+    const skinsRaw = Array.isArray(data.skins) ? data.skins : [];
+    const collectionsMetaRaw = Array.isArray(data.collections) ? data.collections : [];
 
-    const preferredCases = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case','Glove Case','Operation Broken Fang Case','Chroma 3 Case','Falchion Case','Shadow Case','Winter Offensive Weapon Case','Gallery Case','Fever Case'];
-    const preferredCollections = ['The Graphic Design Collection','The Sport & Field Collection','The Overpass 2024 Collection','The Gallery Collection','The Anubis Collection','The 2021 Mirage Collection','The 2021 Dust 2 Collection','The 2021 Vertigo Collection','The Ancient Collection','The Norse Collection','The Canals Collection','The St. Marc Collection','The Cobblestone Collection','The Cache Collection','The Overpass Collection','The Gods and Monsters Collection','The Chop Shop Collection','The Control Collection','The Havoc Collection'];
+    const preferredCases = ['Kilowatt Case','Revolution Case','Recoil Case','Dreams & Nightmares Case','Fracture Case','Clutch Case','Prisma 2 Case','Spectrum 2 Case','Operation Riptide Case','Snakebite Case','Horizon Case','Gamma 2 Case','Danger Zone Case','CS20 Case','Glove Case','Operation Broken Fang Case','Chroma 3 Case','Falchion Case','Shadow Case','Winter Offensive Weapon Case','Gallery Case','Fever Case','Operation Wildfire Case','Operation Vanguard Weapon Case','Huntsman Weapon Case','Operation Phoenix Weapon Case','CS:GO Weapon Case 2','CS:GO Weapon Case 3'];
+    const preferredCollections = ['The Graphic Design Collection','The Sport & Field Collection','The Overpass 2024 Collection','The Gallery Collection','The Armory Collection','The Ascent Collection','The Boreal Collection','The Radiant Collection','The Anubis Collection','The 2021 Mirage Collection','The 2021 Dust 2 Collection','The 2021 Vertigo Collection','The Ancient Collection','The Norse Collection','The Canals Collection','The St. Marc Collection','The Cobblestone Collection','The Cache Collection','The Overpass Collection','The Gods and Monsters Collection','The Chop Shop Collection','The Control Collection','The Havoc Collection'];
     const casesRaw = crates.filter(c => c && c.type === 'Case' && Array.isArray(c.contains) && c.contains.length > 5);
     const collectionsRaw = crates.filter(c => c && c.type === 'Collection' && Array.isArray(c.contains) && c.contains.length > 5);
     const pickedCases = [];
@@ -267,6 +311,28 @@
     const patches = remember(patchesRaw.map(x=>apiItem(x,'patch')).filter(Boolean));
     const keychains = remember(keychainsRaw.map(x=>apiItem(x,'keychain')).filter(Boolean));
     const collectibles = remember(collectiblesRaw.map(x=>apiItem(x,'collectible')).filter(Boolean));
+    const skinItems = remember(skinsRaw.map(x=>apiItem(x,'skin')).filter(Boolean));
+
+    const byCollection = new Map();
+    skinsRaw.forEach(raw => {
+      const mapped = apiItem(raw,'skin');
+      const cols = raw.collections || raw.collection || raw.crates || [];
+      const arr = Array.isArray(cols) ? cols : [cols];
+      arr.forEach(col => {
+        const name = typeof col === 'string' ? col : (col && (col.name || col.id));
+        if(!name || !mapped) return;
+        if(!byCollection.has(name)) byCollection.set(name, []);
+        byCollection.get(name).push(mapped);
+      });
+    });
+    collectionsMetaRaw.forEach((col,idx) => {
+      const name = col && (col.name || col.id);
+      const pool = byCollection.get(name) || (Array.isArray(col && col.contains) ? col.contains.map(x=>apiItem(x,'skin')).filter(Boolean) : []);
+      if(pool && pool.length >= 4){
+        const cc = withHiddenOdds({id:'collection-api-'+slug(name), name, price:calcPrice(pool,idx,'collection'), image:(col.image || svgCase(name)), items:pool, source:'CS2 Collection', kind:'collection', rareText:'Коллекция CS2 / Armory с реальными названиями предметов.'}, cases.length);
+        cases.push(cc);
+      }
+    });
 
     const itemList = () => Array.from(all.values()).filter(Boolean);
     const items = itemList().length > 30 ? itemList() : fallbackItems;
@@ -274,6 +340,7 @@
     const add = c => { if(c && c.items && c.items.length >= 2) cases.push(withHiddenOdds(c, cases.length)); };
     add(createSpecialCase('quality-consumer','Grey / Consumer Case','Consumer Grade',items.filter(i=>['Consumer Grade','Base Grade'].includes(i.rarity)),120,'Низкая редкость / серый пул.'));
     add(createSpecialCase('quality-industrial','Light Blue Industrial Case','Industrial Grade',items.filter(i=>i.rarity === 'Industrial Grade'),220,'Industrial Grade пул.'));
+    add(createSpecialCase('quality-green','Green High Grade / Charms Case','High Grade',items.filter(i=>['High Grade','Base Grade'].includes(i.rarity) || /charm|keychain|sticker/i.test(i.category || i.name)),310,'Зелёный пул: High Grade, брелоки и недорогие наклейки.'));
     add(createSpecialCase('quality-milspec','Blue Mil-Spec Case','Mil-Spec Grade',items.filter(i=>i.rarity === 'Mil-Spec Grade'),430,'Синий Mil-Spec пул.'));
     add(createSpecialCase('quality-restricted','Purple Restricted Case','Restricted',items.filter(i=>i.rarity === 'Restricted'),820,'Фиолетовый Restricted пул.'));
     add(createSpecialCase('quality-classified','Pink Classified Case','Classified',items.filter(i=>i.rarity === 'Classified'),1500,'Розовый Classified пул.'));
@@ -416,12 +483,13 @@
     document.addEventListener('change', e => {
       if(['invRarity','invSort'].includes(e.target.id)) renderInventory();
       if(e.target.id === 'upgradeSource'){ state.pendingUpgrade = e.target.value; save(); renderUpgrade(); }
-      if(e.target.id === 'battleCase') renderBattleInfo();
+      if(e.target.id === 'battleCase' || e.target.id === 'battleMode') renderBattleInfo();
     });
     document.addEventListener('keydown', e => { if(e.key === 'Escape') $$('.modal.show').forEach(m => { if(!m.dataset.locked) closeModal(m); }); });
   }
 
   function route(){
+    state = loadState();
     renderGlobals();
     setActiveNav();
     const page = document.body.dataset.page || 'home';
@@ -563,6 +631,8 @@
   }
 
   function renderInventory(){
+    state = loadState();
+    renderGlobals();
     const root = $('#inventoryRoot'); if(!root) return;
     const controls = $('#inventoryControls');
     const prevQ = ($('#invSearch') && $('#invSearch').value || '').toLowerCase().trim();
@@ -746,32 +816,79 @@
 
   function renderBattle(){
     const root = $('#battleRoot'); if(!root) return;
-    root.innerHTML = `<div class="battle-layout"><aside class="panel"><h3>Case Battle</h3><p>Списывается цена одного твоего места. Если твой дроп дороже ботов — забираешь все 3 предмета.</p><select id="battleCase">${catalog.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${fmt(c.price)}</option>`).join('')}</select><div id="battleInfo"></div><button class="btn primary huge" data-action="start-battle">Начать баттл</button></aside><section id="battleArena" class="grid cards-3"><div class="empty">Выбери кейс и начни баттл.</div></section></div>`;
+    const first = catalog.cases[0];
+    root.innerHTML = `<div class="battle-layout improved-battle"><aside class="panel battle-sidebar"><span class="kicker">Case Battle</span><h3>Баттл против ботов</h3><p>Ты оплачиваешь своё место. Каждый игрок открывает один и тот же кейс. Победитель по сумме дропа забирает весь пул.</p><label class="field-label">Кейс</label><select id="battleCase">${catalog.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${fmt(c.price)}</option>`).join('')}</select><label class="field-label">Режим</label><select id="battleMode"><option value="1v1">1 vs 1</option><option value="1v1v1" selected>1 vs 1 vs 1</option><option value="2v2">2 vs 2 Team</option></select><div id="battleInfo"></div><button class="btn primary huge" data-action="start-battle">Начать баттл</button><p class="small">Без реальных ставок и вывода. Всё сохраняется в localStorage.</p></aside><section class="battle-stage"><div class="battle-top"><h2>Арена</h2><p id="battleStatus">Выбери кейс и режим, затем начни баттл.</p></div><div id="battleArena" class="battle-arena"><div class="empty">Пока баттла нет.</div></div></section></div>`;
+    if(first) $('#battleCase').value = first.id;
     renderBattleInfo();
   }
-  function renderBattleInfo(){ const c = catalog.cases.find(x=>x.id === ($('#battleCase') && $('#battleCase').value)); const el = $('#battleInfo'); if(el && c) el.innerHTML = `<p>Стоимость: <b>${fmt(c.price)}</b></p>`; }
+  function battlePlayers(mode){
+    if(mode === '1v1') return ['Ты','BOT Max'];
+    if(mode === '2v2') return ['Ты','BOT Max','BOT Neo','BOT Rex'];
+    return ['Ты','BOT Max','BOT Neo'];
+  }
+  function renderBattleInfo(){
+    const c = catalog.cases.find(x=>x.id === ($('#battleCase') && $('#battleCase').value));
+    const mode = ($('#battleMode') && $('#battleMode').value) || '1v1v1';
+    const players = battlePlayers(mode);
+    const el = $('#battleInfo');
+    if(el && c) el.innerHTML = `<div class="battle-price"><span>Твоё место</span><b>${fmt(c.price)}</b></div><div class="battle-price"><span>Игроков</span><b>${players.length}</b></div><div class="battle-price"><span>Потенциальный пул</span><b>${fmt(c.price * players.length)}</b></div>`;
+  }
+  function battleRollStrip(c, finalItem){
+    const cards = Array.from({length:34},()=>rollCard(weighted(c)));
+    cards.push(rollCard(finalItem));
+    return `<div class="roulette-box small battle-roll"><div class="roulette-center-arrow"><span></span></div><div class="roulette-pointer"></div><div class="roulette-strip">${cards.join('')}</div></div>`;
+  }
   function startBattle(){
     if(busy.battle) return toast('Баттл уже идёт','warn');
-    const c = catalog.cases.find(x=>x.id === ($('#battleCase') && $('#battleCase').value)); if(!c) return;
+    const c = catalog.cases.find(x=>x.id === ($('#battleCase') && $('#battleCase').value)); if(!c) return toast('Выбери кейс','bad');
+    const mode = ($('#battleMode') && $('#battleMode').value) || '1v1v1';
+    const names = battlePlayers(mode);
     if(!spend(c.price, `Case Battle: ${c.name}`)) return;
-    busy.battle = true; state.battles += 1; save();
-    const players = ['Ты','BOT Max','BOT Neo'].map(name => ({name, item:weighted(c)}));
+    busy.battle = true;
+    state.battles += 1;
+    save();
+    const players = names.map((name,idx) => ({name, team: mode==='2v2' ? (idx%2===0?'A':'B') : name, item: weighted(c)}));
     const arena = $('#battleArena');
-    arena.innerHTML = players.map(p => `<div class="panel"><h3>${esc(p.name)}</h3><div class="roulette-box small"><div class="roulette-pointer"></div><div class="roulette-strip">${Array.from({length:30},()=>rollCard(weighted(c))).join('')}${rollCard(p.item)}</div></div><p>Крутится...</p></div>`).join('');
-    $$('#battleArena .roulette-strip').forEach(strip=>{ strip.getBoundingClientRect(); requestAnimationFrame(()=>{ strip.style.transition='transform 3.4s cubic-bezier(.08,.75,.08,1)'; strip.style.transform=`translateX(-${Math.max(380,strip.scrollWidth-440)}px)`; }); });
+    const status = $('#battleStatus');
+    if(status) status.textContent = 'Кейсы открываются...';
+    arena.innerHTML = players.map(p => `<article class="battle-player"><div class="battle-player-head"><b>${esc(p.name)}</b>${mode==='2v2'?`<span class="pill">Team ${p.team}</span>`:''}</div>${battleRollStrip(c,p.item)}<p class="small">Крутится...</p></article>`).join('');
+    $$('#battleArena .roulette-strip').forEach(strip => {
+      strip.style.transition = 'none';
+      strip.style.transform = 'translateX(0px)';
+      strip.getBoundingClientRect();
+      requestAnimationFrame(()=>{
+        const last = strip.lastElementChild;
+        const box = strip.closest('.roulette-box');
+        const target = Math.max(0, last.offsetLeft - box.clientWidth/2 + last.clientWidth/2 + rnd(-14,14));
+        strip.style.transition='transform 3.9s cubic-bezier(.08,.75,.08,1)';
+        strip.style.transform=`translateX(-${target}px)`;
+      });
+    });
     setTimeout(()=>{
-      const results = players.map(p => ({name:p.name, inv:addItem(p.item,'battle-temp')}));
-      removeItems(results.map(x=>x.inv.uid));
-      const max = Math.max(...results.map(x=>x.inv.value));
-      const winner = results.find(x=>x.inv.value===max);
-      arena.innerHTML = results.map(x => `<div class="panel ${winner.name===x.name?'winner':''}"><h3>${esc(x.name)} ${winner.name===x.name?'🏆':''}</h3>${itemCard(x.inv,{badge:fmt(x.inv.value)})}</div>`).join('');
-      if(winner.name === 'Ты'){
+      const results = players.map(p => ({...p, inv: normalizeInvItem(Object.assign({}, p.item, {uid:id(), source:'battle', addedAt:Date.now(), value:Math.max(1,Math.round(toNum(p.item.value,100)*rnd(.92,1.12)))}))}));
+      let winner;
+      if(mode === '2v2'){
+        const sums = results.reduce((m,x)=>{m[x.team]=(m[x.team]||0)+x.inv.value; return m;},{});
+        const winTeam = (sums.A >= sums.B) ? 'A' : 'B';
+        winner = {team:winTeam, name:`Team ${winTeam}`, value:sums[winTeam]};
+      }else{
+        const top = [...results].sort((a,b)=>b.inv.value-a.inv.value)[0];
+        winner = {team:top.team, name:top.name, value:top.inv.value};
+      }
+      const userWon = mode === '2v2' ? winner.team === 'A' : winner.name === 'Ты';
+      arena.innerHTML = `<div class="battle-summary ${userWon?'win':'lose'}"><h2>${userWon?'Победа!':'Поражение'}</h2><p>${esc(winner.name)} забирает пул на ${fmt(results.reduce((s,x)=>s+x.inv.value,0))}</p></div>` + results.map(x => `<article class="battle-player result ${((mode==='2v2' && x.team===winner.team) || (mode!=='2v2' && x.name===winner.name))?'winner':''}"><div class="battle-player-head"><b>${esc(x.name)}</b>${mode==='2v2'?`<span class="pill">Team ${x.team}</span>`:''}</div>${itemCard(x.inv,{badge:fmt(x.inv.value)})}</article>`).join('');
+      if(userWon){
         state.wins += 1;
-        results.forEach(x => { const it = addItem(Object.assign({}, x.inv), 'battle-win'); addLive('Ты',it); });
-        toast('Ты выиграл баттл и забрал все предметы!','good');
-      }else toast(`Победил ${winner.name}. Ты проиграл баттл.`,'bad');
-      busy.battle=false; save();
-    }, 3700);
+        results.forEach(x => { const it = addItem(Object.assign({}, x.inv, {uid:undefined}), 'battle-win'); addLive('Ты',it); });
+        toast('Ты выиграл баттл — весь пул добавлен в инвентарь','good');
+      }else{
+        toast(`${winner.name} выиграл. Твой дроп не добавлен в инвентарь.`, 'bad');
+      }
+      if(status) status.textContent = userWon ? 'Пул начислен в инвентарь.' : 'Баттл завершён.';
+      busy.battle = false;
+      save();
+      renderBattleInfo();
+    }, 4300);
   }
 
   let deferredInstallPrompt = null;
@@ -779,7 +896,10 @@
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; $$('.js-install-ready').forEach(x=>x.textContent='Готово к установке'); });
   }
   function registerServiceWorker(){
-    if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+    // V8 intentionally unregisters old service workers: previous builds cached stale JS/HTML and broke balance/inventory.
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
+    }
   }
   async function installPWA(){
     if(deferredInstallPrompt){
@@ -805,11 +925,11 @@
 
   function renderProfile(){
     const root = $('#profileRoot'); if(!root) return;
-    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит v7-сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
+    root.innerHTML = `${statCards()}<div class="grid cards-3 block"><div class="panel"><h3>Статистика</h3><p>Апгрейды: <b>${state.upgrades}</b></p><p>Контракты: <b>${state.contracts}</b></p><p>Баттлы: <b>${state.battles}</b></p><p>Победы: <b>${state.wins}</b></p><p>Продано: <b>${fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия save: <b>${esc(state.version||VERSION)}</b></p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div><div class="panel danger"><h3>Сброс</h3><p>Полностью чистит сохранение и возвращает 15 000 LC.</p><button class="btn red" data-action="reset-save">Сбросить прогресс</button><button class="btn" data-action="add-debug-coins">+10 000 LC</button></div></div><section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${state.tx.slice(0,25).map(t=>`<div class="tx"><div><b>${esc(t.text)}</b><small>${new Date(t.time).toLocaleString('ru-RU')}</small></div><strong class="${t.amount>=0?'plus':'minus'}">${t.amount>=0?'+':''}${fmt(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>`;
   }
   function resetSave(){
     if(!confirm('Сбросить прогресс и вернуть стартовый баланс 15 000 LC?')) return;
-    try{ localStorage.removeItem(LS_KEY); }catch(e){}
+    try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); }catch(e){}
     state = defaultState(); save(); toast('Прогресс сброшен','good'); route();
   }
   function exportSave(){ const box=$('#saveBox'); if(box) box.value = btoa(unescape(encodeURIComponent(JSON.stringify(state)))); toast('Save выгружен в поле','good'); }
