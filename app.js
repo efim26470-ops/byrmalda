@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.8.0';
+  const VERSION = '31.8.2';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -1136,7 +1136,7 @@
     document.documentElement.style.colorScheme = theme.id === 'light' ? 'light' : 'dark';
     const meta = document.querySelector('meta[name="theme-color"]');
     if(meta){
-      const colors = {classic:'#090c13',dark:'#05070d',light:'#f3f7ff',vitality:'#f4d000',falcons:'#10261d',fnatic:'#ff5a00','9z':'#6d28d9',spirit:'#2d72ff',vp:'#ff7a00',cloud9:'#00a7e1',navi:'#ffd400',faze:'#e10600',parivision:'#8b5cf6'};
+      const colors = {classic:'#090c13',dark:'#020617',light:'#f8fafc',vitality:'#f4d000',falcons:'#14392b',fnatic:'#ff5a00','9z':'#7c3aed',spirit:'#0b4ad7',vp:'#f97316',cloud9:'#00a7e1',navi:'#ffd400',faze:'#e10600',parivision:'#7c3aed'};
       meta.setAttribute('content', colors[theme.id] || '#090c13');
     }
     if(persist){ try{ localStorage.setItem(THEME_KEY, theme.id); }catch(e){} }
