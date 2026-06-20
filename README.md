@@ -1,1 +1,70 @@
-CS2 Case Lab v32 clean rewrite. Uses the same localStorage key cs2_case_lab_save, so existing account balance/inventory is migrated, not reset. Upload all files to GitHub Pages and open cases.html?clear=v32clean
+# CS2 Case Lab v31.9
+
+Статический фан-симулятор открытия кейсов для GitHub Pages.
+
+## Что изменено в v31.9
+
+- Добавлена отдельная вкладка `Battle-pass` (`battle-pass.html`) и резервная страница по опечатке `batlle-pass.html`.
+- Battle-pass активируется за `200 000 ₽` и имеет 100 последовательных уровней.
+- Каждый уровень содержит сложное задание: открыть конкретный кейс, открыть серию кейсов, поймать редкий дроп, выиграть battle, сделать апгрейды, контракты, продать предметы на сумму, прокрутить колесо и т.д.
+- Прогресс заданий засчитывается только после покупки pass.
+- Награды уровней: баланс, pass-промокоды, случайные предметы, премиум pass-кейсы и контрольные призы.
+- Финал 100 уровня — `Dragon Hoard Case`: AWP | Gungnir, AWP | Dragon Lore или наклейки Katowice 2014.
+- Сохранены изменения v31.4: улучшенные цены наклеек/патчей/пропусков, выбор валют ₽ / $ / € / LC, реальные изображения, навигация по сериям и кнопки вверх/вниз.
+- Сборка чистая: без базы данных, backend и `.bat` файлов.
+
+## Как залить на GitHub Pages
+
+1. Распакуйте архив.
+2. Загрузите содержимое папки `cs2-case-lab-v31-5` в корень репозитория GitHub Pages.
+3. После обновления откройте сайт с параметром `?clear=v315` или очистите кэш браузера.
+
+Прогресс пользователя хранится только в браузере через localStorage/IndexedDB.
+
+## v31.9
+- Исправлена шапка: навигация больше не накладывается на баланс и инвентарь.
+- На широких экранах меню занимает отдельную область, на средних экранах автоматически включается кнопка «Меню».
+
+## v31.9
+- Усилены темы: отдельные фоновые паттерны, крупные водяные знаки команд, собственные цвета карточек/шапки/live-ленты/кнопок.
+- Командные темы теперь заметно отличаются друг от друга, а не только меняют акцентный цвет.
+
+
+## v31.9
+- Добавлены интерактивные рекламные карточки внешних проектов.
+- За переход по каждому ресурсу один раз в день начисляется случайный скин или баланс до 5 000 ₽.
+- Добавлены новые промокоды.
+
+
+## v31.10
+- Theme preload fixed on every HTML page so the chosen theme applies immediately site-wide.
+- Battle-pass and Season pass no longer use bonus-wheel missions; wheel tasks were replaced with mines/cases/upgrades/contracts objectives.
+
+
+## v31.12
+- Исправлена перегруженная шапка: основная навигация теперь прокручивается горизонтально и не налезает на баланс/валюту.
+- Второстепенные режимы вынесены в левый вертикальный блок быстрых переходов под областью темы: Колесо, Battle-pass, Season pass, Развитие, Промо, Реклама, Скачать.
+- На телефонах все пункты остаются внутри кнопки «Меню», а левый быстрый блок скрывается.
+
+
+## v31.13
+Добавлены XP/уровни, титулы, динамический маркет, инвестиции, сезонные ивенты, расширенный battle, Case Creator, миссии коллекционера, продажу без комиссии, графики профиля, редкие события, сезонный магазин, кастомизация профиля, избранное/защита, улучшенный сапёр и новые типы промокодов.
+
+
+## v31.14
+- Fixed theme coverage for Battle-pass, Season pass, Развитие, профиль, маркет, крафт, статистика, сапёр and dynamic cards.
+- Added extra promo codes with balance, XP, ST, item, sticker, patch and profile rewards.
+
+
+## v31.15
+- Major sticker album with collectible slots and rewards.
+- Daily shop with countdown to midnight.
+- Auto-sell cheap drops with configurable threshold.
+- Protected items filtered out from upgrade, contracts and mines.
+- Prestige system after account level 100.
+- Extra promo codes in app.js via V315_PROMOS.
+
+
+## v31.16
+- Added TENMILLION promo code for 10,000,000 ₽.
+- Added Upgrade modes 75% and 67% with automatic target selection.
