@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.16.2';
+  const VERSION = '31.16.3';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -1289,8 +1289,32 @@
     $$('.js-seasonal-pass-link').forEach(a => { a.style.display = show ? '' : 'none'; });
   }
   function getTheme(id){ return SITE_THEMES.find(t => t.id === id) || SITE_THEMES[0]; }
+  function themeExists(id){ return !!SITE_THEMES.find(t => t.id === id); }
   function savedThemeId(){
-    try{ return localStorage.getItem(THEME_KEY) || 'classic'; }catch(e){ return 'classic'; }
+    try{
+      const q = new URLSearchParams(location.search).get('theme');
+      if(q && themeExists(q)) return q;
+    }catch(e){}
+    try{ const s = localStorage.getItem(THEME_KEY); if(s && themeExists(s)) return s; }catch(e){}
+    try{ const s = sessionStorage.getItem(THEME_KEY); if(s && themeExists(s)) return s; }catch(e){}
+    try{
+      const s = (document.documentElement && document.documentElement.dataset && document.documentElement.dataset.theme) || (document.body && document.body.dataset && document.body.dataset.theme) || '';
+      if(s && themeExists(s)) return s;
+    }catch(e){}
+    return 'classic';
+  }
+  function syncThemeLinks(themeId){
+    $$('a[href]').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if(!href || href.startsWith('#') || /^(mailto:|tel:|javascript:|data:)/i.test(href)) return;
+      try{
+        const url = new URL(href, location.href);
+        if(url.origin !== location.origin) return;
+        const file = (url.pathname.split('/').pop() || 'index.html');
+        url.searchParams.set('theme', themeId);
+        a.setAttribute('href', `${file}${url.search}${url.hash}`);
+      }catch(e){}
+    });
   }
   function applyTheme(id, persist=false){
     const theme = getTheme(id);
@@ -1302,7 +1326,17 @@
       const colors = {classic:'#090c13',dark:'#020617',light:'#f8fafc',vitality:'#f4d000',falcons:'#14392b',fnatic:'#ff5a00','9z':'#7c3aed',spirit:'#0b4ad7',vp:'#f97316',cloud9:'#00a7e1',navi:'#ffd400',faze:'#e10600',parivision:'#7c3aed'};
       meta.setAttribute('content', colors[theme.id] || '#090c13');
     }
-    if(persist){ try{ localStorage.setItem(THEME_KEY, theme.id); }catch(e){} }
+    if(persist){
+      try{ localStorage.setItem(THEME_KEY, theme.id); }catch(e){}
+      try{ sessionStorage.setItem(THEME_KEY, theme.id); }catch(e){}
+      try{
+        const url = new URL(location.href);
+        url.searchParams.set('theme', theme.id);
+        const file = (url.pathname.split('/').pop() || 'index.html');
+        history.replaceState(null, '', `${file}${url.search}${url.hash}`);
+      }catch(e){}
+    }
+    syncThemeLinks(theme.id);
     $$('.theme-toggle').forEach(btn => {
       btn.innerHTML = `<span class="theme-badge theme-badge-${esc(theme.id)}">${esc(theme.logo)}</span>`;
       btn.title = `Тема: ${theme.title}`;
@@ -1333,6 +1367,8 @@
     });
     document.addEventListener('click', e => { if(!wrap.contains(e.target)) close(); });
     document.addEventListener('keydown', e => { if(e.key === 'Escape') close(); });
+    window.addEventListener('pageshow', applySavedTheme, {passive:true});
+    document.addEventListener('visibilitychange', () => { if(!document.hidden) applySavedTheme(); });
     applySavedTheme();
   }
 
@@ -3541,7 +3577,10 @@
   }
   buySeasonStore = function(idv){ return buySeasonStoreQty(idv, 1); };
 
-  function v316SeasonStoreHtml(){ const items=seasonStoreItems(); return `<section class="panel block season-store-v316"><div class="head"><div><h2>Сезонный магазин 2.0</h2><p>Баланс жетонов: <b>${toNum(state.seasonTokens,0)} ${SEASON_TOKEN_NAME}</b>. Массовая покупка: 3, 10 или на все жетоны.</p></div></div><div class="grid cards-5">${items.map(x=>`<article class="mini-card"><h3>${esc(x.title)}</h3><p>Цена: <b>${x.cost} ${SEASON_TOKEN_NAME}</b></p><div class="mass-buy"><button class="btn primary" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="1" ${toNum(state.seasonTokens,0)>=x.cost?'':'disabled'}>1</button><button class="btn" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="3" ${toNum(state.seasonTokens,0)>=x.cost*3?'':'disabled'}>x3</button><button class="btn" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="10" ${toNum(state.seasonTokens,0)>=x.cost*10?'':'disabled'}>x10</button><button class="btn" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="all" ${toNum(state.seasonTokens,0)>=x.cost?'':'disabled'}>Все</button></div></article>`).join('')}</div></section>`; }
+  function v316SeasonStoreHtml(){
+    const items=seasonStoreItems();
+    return `<section class="panel block season-store-v316"><div class="head"><div><h2>Сезонный магазин 2.0</h2><p>Баланс жетонов: <b>${toNum(state.seasonTokens,0)} ${SEASON_TOKEN_NAME}</b>. Массовая покупка: 3, 10 или на все жетоны.</p></div></div><div class="season-store-grid">${items.map(x=>`<article class="mini-card season-store-card"><h3>${esc(x.title)}</h3><p>Цена: <b>${x.cost} ${SEASON_TOKEN_NAME}</b></p><div class="mass-buy"><button class="btn primary" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="1" ${toNum(state.seasonTokens,0)>=x.cost?'':'disabled'}>1 шт</button><button class="btn" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="3" ${toNum(state.seasonTokens,0)>=x.cost*3?'':'disabled'}>x3</button><button class="btn" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="10" ${toNum(state.seasonTokens,0)>=x.cost*10?'':'disabled'}>x10</button><button class="btn" data-action="buy-season-store-v316" data-store="${x.id}" data-qty="all" ${toNum(state.seasonTokens,0)>=x.cost?'':'disabled'}>На всё</button></div></article>`).join('')}</div></section>`;
+  }
   function v316SeasonEventsPanelHtml(){ v316Ensure(); const left = Math.max(0,V316_EVENT_REFRESH_COOLDOWN - (Date.now()-state.seasonEvents.lastRefreshAt)); return `<section class="panel block"><div class="head"><div><h2>Обновление сезонных ивентов</h2><p>Можно обновить случайный набор ивентов не чаще 1 раза в сутки.</p></div><button class="btn primary" data-action="refresh-season-events" ${left<=0?'':'disabled'}>${left<=0?'Обновить ивенты':`Доступно через ${formatTime(left)}`}</button></div></section>`; }
   function v316TeamEventHtml(){
     const theme = getTheme(currentThemeId());
@@ -3614,13 +3653,21 @@
   const v316OldRenderHub = renderHub;
   renderHub = function(){ v316Ensure(); v316OldRenderHub(); v316EnhanceHubDom(); };
   const v316OldCaseCard = caseCard;
-  caseCard = function(c){ const html=v316OldCaseCard(c); return c && c._luckyPersonal ? html.replace('<span class="case-kind">', '<span class="case-lucky">окупаемый у тебя</span><span class="case-kind">') : html; };
+  caseCard = function(c){
+    const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'farm' ? 'Фарм' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
+    const priceLabel = c.price<750 ? 'дешёвый' : c.price>6500 ? 'дорогой' : 'средний';
+    const lucky = !!(c && (c._luckyPersonal || isPersonalProfitCase(c)));
+    const chips = [];
+    if(c.kind === 'farm') chips.push('<span class="pill">farm ≤100 ₽</span>');
+    const rarityChips = [...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`);
+    return `<article class="case-card case-card-clean" style="--theme:${themeColor(c)}"><div class="case-topbadges"><span class="case-kind">${esc(kindLabel)}</span>${lucky?'<span class="case-lucky">окупаемый</span>':''}<span class="price-tier">${priceLabel}</span></div>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${chips.join('')}${rarityChips.join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
+  };
 
   function renewSeasonalPass(){
     if(!spend(V316_SEASON_RENEW_PRICE, 'Обновление Season pass')) return;
-    const newId = 'season-'+Date.now().toString(36);
+    const newId = 'season-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6);
     state.seasonalPass = {seasonId:newId,seasonStartedAt:Date.now(),active:true,level:0,activatedAt:Date.now(),current:{level:1,counts:{}},rewards:[],vouchers:[]};
-    save(); renderSeasonalPass(); toast('Новый Season pass активирован','good');
+    save(); renderSeasonalPass(); toast('Новый Season pass активирован · пул дропа обновлён','good');
   }
   const v316OldRenderSeasonalPass = renderSeasonalPass;
   renderSeasonalPass = function(){ v316OldRenderSeasonalPass(); const root=$('#seasonalPassRoot'); if(root) root.insertAdjacentHTML('afterbegin', `<section class="panel block"><div class="head"><div><h2>Обновление Season pass</h2><p>Можно купить новый сезонный pass и сразу активировать его заново.</p></div><button class="btn primary" data-action="renew-seasonal-pass">Обновить за ${fmt(V316_SEASON_RENEW_PRICE,'USD')}</button></div></section>`); };
@@ -3694,6 +3741,46 @@
     root.innerHTML = `<div class="promo-layout promo-layout-hidden"><article class="panel promo-card"><span class="kicker">Секретные промокоды</span><h2>Активировать бонус</h2><p>Введи код и получи награду. Конкретные промокоды на этой странице специально скрыты, чтобы игроки не видели список заранее.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${total}. Доступные коды выдаёт владелец проекта.</p></article><article class="panel"><h3>История активаций</h3><div class="promo-used">${hiddenHistory}</div></article><article class="panel"><h3>Что может выпасть</h3><p class="small">Баланс, XP, ST-жетоны, скины, наклейки, патчи и косметика профиля. Названия самих кодов здесь не отображаются.</p></article></div>`;
   };
 
+
+  /* v31.16.3 — stronger theme persistence, visual fixes, rotating seasonal pool */
+  function seasonalPoolSeed(){ const sp = seasonalPassState(); return String((sp && sp.seasonId) || SEASONAL_PASS_SEASON_ID || 'season'); }
+  function seasonalSeededItems(opts={}){
+    const min = Math.max(1, Math.round(toNum(opts.min, 100)));
+    const max = Math.max(min, Math.round(toNum(opts.max, 10000)));
+    const count = Math.max(1, Math.round(toNum(opts.count, 6)));
+    const seed = `${seasonalPoolSeed()}:${opts.salt || 'base'}`;
+    let pool = (catalog.items || []).filter(Boolean).filter(x => {
+      const val = toNum(x.value,0);
+      if(val < min || val > max) return false;
+      const cat = String(x.category || 'skin');
+      if(opts.stickers && !/sticker|patch/i.test(cat)) return false;
+      if(opts.collectibles && !/collectible|sticker|patch/i.test(cat)) return false;
+      if(!opts.includeCollectibles && /viewer pass|souvenir package/i.test(String(x.name||''))) return false;
+      return true;
+    });
+    if(opts.preferSkins) pool = pool.filter(x => !/sticker|patch|viewer pass|souvenir package/i.test(String(x.name||'')));
+    if(!pool.length) pool = (catalog.items || []).filter(Boolean);
+    return [...pool].sort((a,b)=>stableNoise(seed+':'+(a.id||a.name))-stableNoise(seed+':'+(b.id||b.name))).slice(0,count);
+  }
+  seasonalRewardPool = function(tier){
+    if(tier === 'premium') return seasonalSeededItems({min:3500,max:42000,count:18,preferSkins:true,salt:'premium'});
+    if(tier === 'mid') return seasonalSeededItems({min:900,max:18000,count:18,preferSkins:true,salt:'mid'});
+    if(tier === 'seasonal') return seasonalSeededItems({min:450,max:12000,count:18,salt:'seasonal'});
+    return seasonalSeededItems({min:350,max:9000,count:18,salt:'base'});
+  };
+  seasonalFinalPool = function(){
+    const skins = seasonalSeededItems({min:5500,max:26000,count:4,preferSkins:true,salt:'final-skins'});
+    const collectibles = seasonalSeededItems({min:1800,max:65000,count:2,salt:'final-collectibles'});
+    return [...skins, ...collectibles].slice(0,6);
+  };
+  const v316OldRenderSeasonalPass2 = renderSeasonalPass;
+  renderSeasonalPass = function(){
+    v316OldRenderSeasonalPass2();
+    const root = $('#seasonalPassRoot');
+    if(!root) return;
+    const hero = $('.seasonal-hero .kicker', root);
+    if(hero) hero.textContent = `Limited Seasonal Battle-pass · ${seasonalPoolSeed()}`;
+  };
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

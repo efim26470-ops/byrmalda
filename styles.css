@@ -311,3 +311,21 @@ html[data-theme="light"] .btn.primary{color:#0f172a!important}
 .upgrade-scale .win{left:40%;width:20%;background:linear-gradient(135deg,#22c55e,#facc15);color:#111827;text-shadow:none;z-index:1;transition:left .18s ease,width .18s ease}
 .upgrade-marker{position:absolute;z-index:4;top:50%;left:50%;transform:translate(-50%,-50%) rotate(45deg);width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:#fff;color:#111827;font-style:normal;font-size:0;box-shadow:0 0 30px rgba(255,255,255,.85),0 12px 20px rgba(0,0,0,.45)}
 .upgrade-marker:after{content:'';width:12px;height:12px;border-radius:50%;background:#111827}.upgrade-marker.win{background:#facc15}.upgrade-marker.lose{background:#fecaca}.case-lucky{position:absolute;right:14px;top:46px;z-index:3;padding:5px 8px;border-radius:999px;background:linear-gradient(135deg,#22c55e,#facc15);color:#111827;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.05em}.mass-buy{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.team-event-v316 .theme-badge{display:inline-grid;margin-right:6px}.cosmetic-grid.v316{display:grid;gap:18px}.cosmetic-grid.v316 .craft-row{align-items:flex-start}.case-creator-v316 .creator-form{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.season-store-v316 .mini-card{min-height:180px}.major-album .head>div:last-child{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}@media(max-width:640px){.mass-buy{grid-template-columns:repeat(2,1fr)}.upgrade-roulette.v316{height:118px;padding:10px}.upgrade-scale .loss,.upgrade-scale .win{font-size:14px}.case-lucky{top:42px;right:10px}}
+
+
+/* v31.16.3 visual fixes */
+.case-card-clean{display:flex;flex-direction:column}
+.case-card-clean .case-topbadges{display:flex;flex-wrap:wrap;gap:8px;align-items:center;position:relative;z-index:6;margin-bottom:10px}
+.case-card-clean .case-kind,.case-card-clean .price-tier,.case-card-clean .case-lucky{position:static!important;left:auto!important;right:auto!important;top:auto!important;display:inline-flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
+.case-card-clean .price-tier{margin-left:auto}
+.case-card-clean .case-lucky{padding:6px 9px;border-radius:999px;background:linear-gradient(135deg,#22c55e,#facc15);color:#111827;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.05em}
+.case-card-clean .case-visual{margin-top:2px}
+.case-card-clean .mini-list{min-height:32px;align-items:flex-start}
+.case-card-clean .source{display:block;margin-top:4px}
+.season-store-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.season-store-card{min-height:220px;overflow:hidden}
+.season-store-card h3{min-height:48px;line-height:1.2}
+.season-store-card p{min-height:26px}
+.season-store-card .mass-buy{margin-top:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
+.season-store-card .mass-buy .btn{width:100%;min-width:0;padding:0 8px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:640px){.season-store-grid{grid-template-columns:1fr}.season-store-card{min-height:auto}}
