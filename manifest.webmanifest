@@ -43,3 +43,9 @@
     "entertainment"
   ]
 }
+
+## v31.17
+- Fixed upgrade roulette/result sync.
+- Removed sale commission.
+- Sticker wear/float removed; sticker prices are individualized by tournament/team/finish.
+- Added album refresh, leveled achievements/missions, stronger team events, season event refresh, larger season store with bulk buy, Season Pass renew, better custom cases and profile customization.
