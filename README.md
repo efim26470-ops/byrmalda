@@ -70,7 +70,7 @@
 - Added Upgrade modes 75% and 67% with automatic target selection.
 
 
-## v31.17
+## v31.18
 - Fixed upgrade roulette/result sync.
 - Removed sale commission.
 - Sticker wear/float removed; sticker prices are individualized by tournament/team/finish.

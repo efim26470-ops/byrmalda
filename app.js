@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.17.0';
+  const VERSION = '31.18.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -3395,6 +3395,66 @@
   renderPromos=function(){ oldRenderPromosV317(); var root=$('#promosRoot'); if(!root) return; root.insertAdjacentHTML('beforeend','<section class="panel block"><div class="head"><h2>Промокоды v31.17</h2></div><div class="promo-used">'+Object.keys(V317_PROMOS).map(function(x){return '<span class="pill">'+esc(x)+'</span>';}).join('')+'</div></section>'); };
 
   document.addEventListener('click', function(e){ var btn=e.target.closest('[data-action]'); if(!btn) return; var a=btn.dataset.action; if(a==='refresh-major-album') return refreshMajorAlbum(); if(a==='refresh-season-events') return refreshSeasonEvents(); if(a==='buy-season-store-bulk') return buySeasonStore(btn.dataset.store||'', btn.dataset.qty||1); if(a==='renew-seasonal-pass') return renewSeasonalPass(); if(a==='set-frame') return setFrame(btn.dataset.frame||'default'); });
+
+
+  /* v31.18 — hard recovery patch for pages stuck on loading after corrupted saves or route runtime errors */
+  function v318Money(n){ try{ return fmt(n); }catch(e){ return Math.round(toNum(n,0)).toLocaleString('ru-RU')+' ₽'; } }
+  function v318SafeNumber(n, f){ try{ return Math.max(0, Math.round(toNum(n,f||0))); }catch(e){ return Math.max(0, Math.round(Number(n)||f||0)); } }
+  function v318RootForPage(page){
+    const map = {home:'#homeRoot',cases:'#casesRoot',inventory:'#inventoryRoot',upgrade:'#upgradeRoot',contracts:'#contractsRoot',wheel:'#wheelRoot',battle:'#battleRoot',mines:'#minesRoot','battle-pass':'#battlePassRoot','seasonal-pass':'#seasonalPassRoot',ads:'#adsRoot',promos:'#promosRoot',hub:'#hubRoot',profile:'#profileRoot',install:'#installRoot'};
+    return $(map[page] || '[data-route-root]') || $('[data-route-root]');
+  }
+  function v318RenderProfileFallback(err){
+    const root = $('#profileRoot'); if(!root) return;
+    try{ state = normalizeState(state); }catch(e){ state = normalizeState({}); }
+    const lvl = (function(){ try{return accountLevel();}catch(e){return {level:1,current:0,need:600,pct:0,prestigeTitle:'Без престижа'};} })();
+    const inv = Array.isArray(state.inventory) ? state.inventory : [];
+    const tx = Array.isArray(state.tx) ? state.tx.slice(0,20) : [];
+    const titles = (typeof profileTitleList === 'function' ? profileTitleList() : ['Новичок','Коллекционер','Трейдер','Case Master','Dragon Hunter']);
+    const avatars = [['classic','✦'],['dragon','🐉'],['major','🏆'],['trader','💼'],['knife','🔪'],['sticker','🏷️'],['gold','🥇'],['cyber','⚡']];
+    root.innerHTML = `<section class="panel profile-head"><div class="profile-avatar">${esc(({classic:'✦',dragon:'🐉',major:'🏆',trader:'💼',knife:'🔪',sticker:'🏷️',gold:'🥇',cyber:'⚡'}[state.avatar]||'✦'))}</div><div><span class="kicker">${esc(state.title||'Новичок')}</span><h2>Профиль восстановлен · уровень ${lvl.level}</h2><div class="bp-bar"><span style="width:${clamp(lvl.pct||0,0,100)}%"></span></div><small>${v318SafeNumber(lvl.current,0)}/${v318SafeNumber(lvl.need,600)} XP · ${v318SafeNumber(state.seasonTokens,0)} ST · ${esc(lvl.prestigeTitle||'Без престижа')}</small></div></section>
+    <div class="grid cards-4 block"><div class="stat"><small>Баланс</small><b>${v318Money(state.balance)}</b></div><div class="stat"><small>Предметов</small><b>${inv.length}</b></div><div class="stat"><small>Открыто кейсов</small><b>${v318SafeNumber(state.opened,0)}</b></div><div class="stat"><small>Победы</small><b>${v318SafeNumber(state.wins,0)}</b></div></div>
+    <section class="panel block"><div class="head"><div><h2>Кастомизация профиля</h2><p>Аварийная загрузка больше не блокирует профиль. Можно менять аватар и титул.</p></div></div><div class="cosmetic-grid"><div><h3>Аватар</h3><div class="craft-row">${avatars.map(a=>`<button class="small-btn ${state.avatar===a[0]?'active':''}" data-action="set-avatar" data-avatar="${a[0]}">${a[1]}</button>`).join('')}</div></div><div><h3>Титул</h3><div class="craft-row">${titles.map(t=>`<button class="small-btn ${state.title===t?'active':''}" data-action="set-title" data-title="${esc(t)}">${esc(t)}</button>`).join('')}</div></div></div></section>
+    <section class="panel block"><div class="head"><div><h2>Сохранение</h2><p>${storageStatusText()}</p></div></div><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></section>
+    <section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${tx.map(t=>`<div class="tx"><div><b>${esc(t.text||'Операция')}</b><small>${new Date(t.time||Date.now()).toLocaleString('ru-RU')}</small></div><strong class="${toNum(t.amount,0)>=0?'plus':'minus'}">${toNum(t.amount,0)>=0?'+':''}${v318Money(t.amount)}</strong></div>`).join('') || '<div class="empty">История пуста.</div>'}</div></section>
+    <section class="notice"><b>Страница восстановлена.</b> Если раньше висело «Загружаю данные…», причина была в конфликте старого сохранения с новыми блоками профиля. Сохранение сохранено, сброс не нужен.</section>`;
+  }
+  function v318RenderPageFallback(page, err){
+    if(page === 'profile') return v318RenderProfileFallback(err);
+    const root = v318RootForPage(page); if(!root) return;
+    try{ state = normalizeState(state); }catch(e){ state = normalizeState({}); }
+    root.innerHTML = `<section class="panel block"><div class="head"><div><h2>Раздел восстановлен</h2><p>Страница не зависла: включён безопасный рендер v31.18.</p></div></div><div class="grid cards-3"><div class="stat"><small>Баланс</small><b>${v318Money(state.balance)}</b></div><div class="stat"><small>Инвентарь</small><b>${Array.isArray(state.inventory)?state.inventory.length:0}</b></div><div class="stat"><small>Версия</small><b>${esc(VERSION)}</b></div></div><p class="small">Открой другой раздел или обнови страницу с параметром <b>?clear=v3118</b>.</p><a class="btn primary" href="cases.html?clear=v3118">К кейсам</a><a class="btn" href="profile.html?clear=v3118">Профиль</a></section>`;
+  }
+  const __renderGlobalsV318 = renderGlobals;
+  renderGlobals = function(){
+    try{ return __renderGlobalsV318(); }
+    catch(err){
+      console.error('v31.18 renderGlobals recovery:', err);
+      try{ state = normalizeState(state); }catch(e){ state = normalizeState({}); }
+      $$('.js-balance').forEach(x => { try{x.textContent = v318Money(state.balance);}catch(e){} });
+      $$('.js-inv-count').forEach(x => { try{x.textContent = String(Array.isArray(state.inventory)?state.inventory.length:0);}catch(e){} });
+      $$('.js-version').forEach(x => { try{x.textContent = VERSION;}catch(e){} });
+    }
+  };
+  const __renderProfileV318 = renderProfile;
+  renderProfile = function(){
+    try{ return __renderProfileV318(); }
+    catch(err){ console.error('v31.18 profile recovery:', err); return v318RenderProfileFallback(err); }
+  };
+  const __renderHubV318 = renderHub;
+  renderHub = function(){
+    try{ return __renderHubV318(); }
+    catch(err){ console.error('v31.18 hub recovery:', err); return v318RenderPageFallback('hub', err); }
+  };
+  const __routeV318 = route;
+  route = function(){
+    try{ return __routeV318(); }
+    catch(err){
+      console.error('v31.18 route recovery:', err);
+      try{ renderGlobals(); }catch(e){}
+      return v318RenderPageFallback((document.body && document.body.dataset && document.body.dataset.page) || 'home', err);
+    }
+  };
 
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

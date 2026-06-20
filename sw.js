@@ -3,7 +3,7 @@ self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.registration.unregister()));
 
 
-## v31.17
+## v31.18
 - Fixed upgrade roulette/result sync.
 - Removed sale commission.
 - Sticker wear/float removed; sticker prices are individualized by tournament/team/finish.
