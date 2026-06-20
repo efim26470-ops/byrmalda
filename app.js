@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.16.0';
+  const VERSION = '31.16.2';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -253,6 +253,13 @@
   let catalog = {items:fallbackItems, cases:fallbackCases, source:'fallback'};
   let storageWarned = false;
   let storageHealth = {local:false, session:false, indexedDB:false, windowName:false, mode:'starting', lastError:''};
+  const STORAGE_KEEP_KEYS = new Set([LS_KEY, THEME_KEY, BACKUP_KEY]);
+  function shouldRemoveLegacyStorageKey(k){
+    if(!k || STORAGE_KEEP_KEYS.has(k)) return false;
+    // Удаляем только старые save-ключи. Раньше тут удалялся cs2_case_lab_theme,
+    // поэтому тема сбрасывалась при переходе на новую HTML-страницу.
+    return LEGACY_KEYS.includes(k) || /^cs2_case_lab_(state|save|session|v\d+|backup)/i.test(k);
+  }
   cleanupStorageBeforeLoad();
   let state = loadState();
   let busy = {case:false,wheel:false,battle:false,ad:false,upgrade:false};
@@ -369,10 +376,10 @@
     try{
       for(let i=0;i<localStorage.length;i++){
         const k = localStorage.key(i);
-        if(k && /cs2_case_lab/i.test(k)) keys.add(k);
+        if(shouldRemoveLegacyStorageKey(k)) keys.add(k);
       }
     }catch(e){}
-    return Array.from(keys);
+    return Array.from(keys).filter(k => k && k !== THEME_KEY);
   }
   function compactInvItem(it){
     if(!it) return null;
@@ -402,7 +409,7 @@
       const legacyRaw = !keepRaw ? LEGACY_KEYS.map(k => { try{return localStorage.getItem(k)}catch(e){return null} }).find(Boolean) : null;
       for(let i=localStorage.length-1;i>=0;i--){
         const k = localStorage.key(i);
-        if(k && /cs2_case_lab/i.test(k) && k !== LS_KEY) localStorage.removeItem(k);
+        if(shouldRemoveLegacyStorageKey(k)) localStorage.removeItem(k);
       }
       if(!keepRaw && legacyRaw){
         try{ localStorage.setItem(LS_KEY, JSON.stringify(compactState(JSON.parse(legacyRaw)))); }catch(e){}
@@ -523,7 +530,7 @@
       storageHealth.local = false;
       storageHealth.lastError = e && e.name ? e.name : String(e);
       try{
-        for(let i=localStorage.length-1;i>=0;i--){ const k = localStorage.key(i); if(k && /cs2_case_lab/i.test(k) && k !== LS_KEY) localStorage.removeItem(k); }
+        for(let i=localStorage.length-1;i>=0;i--){ const k = localStorage.key(i); if(shouldRemoveLegacyStorageKey(k)) localStorage.removeItem(k); }
         localStorage.setItem(LS_KEY, raw);
         okLocal = true;
         storageHealth.local = true;
@@ -716,9 +723,11 @@
     const agents = ['Sir Bloody Miami Darryl | The Professionals','Cmdr. Mae | SWAT','Number K | The Professionals','Special Agent Ava | FBI'].map((n,i)=>({id:'offline-agent-'+i,name:n,rarity:['Master','Superior','Exceptional','Distinguished'][i%4],rarityColor:rarityColors[['Master','Superior','Exceptional','Distinguished'][i%4]],value:900+i*620,weight:9+i*2,image:svgSkin(n,'#111827','#f59e0b'),category:'agent'}));
     const charms = ['Charm | Hot Hands','Charm | Baby Karat T','Charm | Lil Squirt','Charm | Chicken Lil'].map((n,i)=>applySteamLikePrice({id:'offline-charm-'+i,name:n,rarity:['High Grade','Remarkable','Exotic'][i%3],rarityColor:rarityColors[['High Grade','Remarkable','Exotic'][i%3]],value:180+i*190,weight:18-i*3,image:svgSkin(n,'#22c55e','#f97316'),category:'keychain'}));
     const patches = ['Patch | Metal Gold Nova','Patch | Bravo','Patch | Bayonet Frog','Patch | Howl'].map((n,i)=>applySteamLikePrice({id:'offline-patch-'+i,name:n,rarity:['High Grade','Remarkable','Exotic','Extraordinary'][i%4],rarityColor:rarityColors[['High Grade','Remarkable','Exotic','Extraordinary'][i%4]],value:110+i*160,weight:18-i*3,image:svgSkin(n,'#94a3b8','#ef4444'),category:'patch'}));
-    const items = [...fallbackItems, ...stickers, ...agents, ...charms, ...patches];
+    const farmItems = farmEconomyItems();
+    const items = [...fallbackItems, ...farmItems, ...stickers, ...agents, ...charms, ...patches];
     const base = fallbackCases.map((c,i)=>{ const pricedItems = c.items.map(applySteamLikePrice); return withHiddenOdds(Object.assign({}, c, {items:pricedItems, price:calcPrice(pricedItems,i,'case'), profitOdds:.42 + (i%4)*.08}),i); });
     return {items, cases:[...base,
+      ...farmCaseSet(items),
       createSpecialCase('budget-random','Budget Random Case','Mil-Spec Grade',items.filter(x=>x.value<=450),85,'Очень дешёвый рандомный пул.'),
       createSpecialCase('profit-hunter','Profit Hunter Case','Classified',items.filter(x=>x.value>=300&&x.value<=5000),780,'Скрыто более щедрый профиль окупа.'),
       createSpecialCase('highroller-red','High Roller Red Case','Covert',items.filter(x=>x.value>=900),2800,'Дорогой рискованный пул.'),
@@ -794,9 +803,11 @@
     });
 
     const itemList = () => Array.from(all.values()).filter(Boolean);
-    const items = itemList().length > 30 ? itemList() : fallbackItems;
+    const baseItems = itemList().length > 30 ? itemList() : fallbackItems;
+    const items = [...baseItems, ...farmEconomyItems()];
 
     const add = c => { if(c && c.items && c.items.length >= 2) cases.push(withHiddenOdds(c, cases.length)); };
+    farmCaseSet(items).forEach(c => { if(c) cases.push(c); });
     add(createSpecialCase('budget-random','Budget Random Case','Mil-Spec Grade',items.filter(i=>toNum(i.value,0) <= 450),85,'Очень дешёвый микс: чаще низкая цена, иногда окуп.'));
     add(createSpecialCase('budget-green','Cheap Green Case','High Grade',items.filter(i=>toNum(i.value,0) <= 650 && ['High Grade','Base Grade','Industrial Grade','Mil-Spec Grade'].includes(i.rarity)),120,'Дешёвый зелёный/синий пул.'));
     add(createSpecialCase('mid-risk','Risky Mid Case','Restricted',items.filter(i=>toNum(i.value,0) >= 180 && toNum(i.value,0) <= 2600),520,'Средний риск: может дать плюс, но часто минус.'));
@@ -843,6 +854,67 @@
     const c2 = c === '#22c55e' ? '#064e3b' : c === '#ef4444' ? '#7f1d1d' : c === '#4b69ff' ? '#1e3a8a' : c === '#8b5cf6' ? '#4c1d95' : c === '#ec4899' ? '#831843' : '#111827';
     const icon = /knife/i.test(name) ? '★' : /glove/i.test(name) ? '✋' : /sticker|capsule|tournament/i.test(name) ? '◆' : /agent/i.test(name) ? '♟' : /charm|keychain/i.test(name) ? '✦' : /patch/i.test(name) ? '⬢' : /green/i.test(name) ? 'GREEN' : /red|covert/i.test(name) ? 'RED' : /blue|mil/i.test(name) ? 'BLUE' : /pink|classified/i.test(name) ? 'PINK' : 'CS2';
     return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 460"><defs><radialGradient id="r" cx="50%" cy="0%" r="80%"><stop stop-color="${c}"/><stop offset="1" stop-color="${c2}"/></radialGradient><linearGradient id="g" x1="0" x2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="${c}"/></linearGradient><filter id="s"><feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".55"/></filter></defs><rect width="680" height="460" rx="44" fill="#090d18"/><circle cx="135" cy="80" r="170" fill="${c}" opacity=".22"/><circle cx="550" cy="380" r="190" fill="${c}" opacity=".16"/><g filter="url(#s)"><path d="M120 165h440c24 0 43 19 43 43v230c0 24-19 43-43 43H120c-24 0-43-19-43-43V208c0-24 19-43 43-43z" fill="url(#g)" stroke="rgba(255,255,255,.22)" stroke-width="10"/><path d="M190 165v-36c0-44 32-76 76-76h148c44 0 76 32 76 76v36" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="22"/><rect x="110" y="205" width="460" height="132" rx="22" fill="url(#r)" opacity=".92"/><path d="M140 235h400M140 272h400M140 309h400" stroke="#020617" stroke-opacity=".28" stroke-width="9"/></g><text x="340" y="303" font-family="Arial" font-weight="900" font-size="76" fill="#fff" text-anchor="middle">${icon}</text><text x="340" y="392" font-family="Arial" font-weight="900" font-size="32" fill="#fff" text-anchor="middle">${safe}</text></svg>`);
+  }
+  function farmEconomyItems(){
+    const defs = [
+      ['farm-p2000-grass','P2000 | Grass Farm','Consumer Grade',14,'#355e3b','#9be564'],
+      ['farm-glock-copper','Glock-18 | Copper Seed','Consumer Grade',16,'#7c2d12','#f59e0b'],
+      ['farm-dual-barn','Dual Berettas | Old Barn','Consumer Grade',18,'#1f2937','#b45309'],
+      ['farm-nova-hay','Nova | Haystack','Consumer Grade',19,'#78350f','#fde68a'],
+      ['farm-mp7-field','MP7 | Field Path','Consumer Grade',22,'#14532d','#84cc16'],
+      ['farm-mac10-mud','MAC-10 | Mud Track','Consumer Grade',24,'#292524','#a8a29e'],
+      ['farm-ump-rust','UMP-45 | Rust Fence','Industrial Grade',27,'#431407','#fb923c'],
+      ['farm-galil-wheat','Galil AR | Wheat Line','Industrial Grade',29,'#713f12','#facc15'],
+      ['farm-famas-silo','FAMAS | Silo','Industrial Grade',32,'#334155','#38bdf8'],
+      ['farm-mp9-dust','MP9 | Dust Stable','Industrial Grade',35,'#57534e','#fde68a'],
+      ['farm-p250-fertilizer','P250 | Fertilizer','Industrial Grade',38,'#365314','#bef264'],
+      ['farm-tec9-harvest','Tec-9 | Harvest','Industrial Grade',42,'#7f1d1d','#f97316'],
+      ['farm-five7-orchard','Five-SeveN | Orchard','Mil-Spec Grade',48,'#064e3b','#22c55e'],
+      ['farm-ssg-scarecrow','SSG 08 | Scarecrow','Mil-Spec Grade',54,'#451a03','#fbbf24'],
+      ['farm-sawed-irrigation','Sawed-Off | Irrigation','Mil-Spec Grade',58,'#083344','#06b6d4'],
+      ['farm-pp-bizon-market','PP-Bizon | Market Day','Mil-Spec Grade',62,'#4c1d95','#a78bfa'],
+      ['farm-p90-tractor','P90 | Tractor Run','Mil-Spec Grade',68,'#7c2d12','#f97316'],
+      ['farm-aug-greenhouse','AUG | Greenhouse','Mil-Spec Grade',75,'#052e16','#34d399'],
+      ['farm-sg553-sunrise','SG 553 | Sunrise Field','Restricted',84,'#7c2d12','#facc15'],
+      ['farm-xm-harvester','XM1014 | Harvester','Restricted',92,'#172554','#60a5fa']
+    ];
+    return defs.map(x => ({
+      id:x[0], baseId:x[0], name:x[1], displayName:x[1], rarity:x[2], rarityColor:rarityColors[x[2]]||'#60a5fa',
+      value:x[3], steamRub:x[3], steamUsd:Math.round((x[3]/RUB_PER_USD)*100)/100, currency:CURRENCY, priceVersion:PRICE_VERSION,
+      weight:1, image:svgSkin(x[1],x[4],x[5]), category:'skin', marketHashName:x[1], source:'Farm Economy'
+    }));
+  }
+  function bestFarmRare(pool, fallbackIndex=0){
+    const candidates = (pool || []).filter(x => x && (x.category === 'skin' || !x.category) && toNum(x.value,0) >= 1600 && toNum(x.value,0) <= 15000 && !/souvenir package|viewer pass|capsule|sticker|patch|agent|charm|keychain/i.test(x.name || ''));
+    const sorted = candidates.length ? candidates.slice().sort((a,b)=>toNum(b.value,0)-toNum(a.value,0)) : fallbackItems.slice().sort((a,b)=>toNum(b.value,0)-toNum(a.value,0));
+    return sorted[fallbackIndex % Math.max(1, sorted.length)] || fallbackItems[0];
+  }
+  function createFarmCase(idv, name, sourcePool, price, rareIndex=0, text){
+    const farm = farmEconomyItems();
+    const cheapFromCatalog = (sourcePool || []).filter(x => x && (x.category === 'skin' || !x.category) && toNum(x.value,0) <= 115 && !/^farm-/i.test(x.id || '')).slice(0,18);
+    const cheap = [...farm, ...cheapFromCatalog].slice(0,32).map((x,i) => Object.assign({}, x, {weight: 1 + (i % 5) * .04}));
+    const rareBase = bestFarmRare(sourcePool, rareIndex);
+    const rare = Object.assign({}, rareBase, {id:`${idv}-jackpot-${rareBase.id || slug(rareBase.name)}`, weight:.13 + (rareIndex % 4) * .025, source:'Farm Jackpot'});
+    return {
+      id:idv, name, price:clamp(Math.round(toNum(price, 79)), 25, 100), image:thematicCaseImage(name, '#22c55e'),
+      items:[...cheap, rare], source:'Farm Case', kind:'farm', rareText:text || 'Фарм-кейс: много дешёвых пушек и один дорогой jackpot-дроп.',
+      _odds:{profitOdds:.96,jackpot:.006,cheap:.30,priceMult:1}, _priced:true
+    };
+  }
+  function farmCaseSet(pool){
+    return [
+      createFarmCase('farm-seed-49','Farm Case · Seed 49',pool,49,0,'Цена 49 ₽: почти всегда дешёвая пушка, но внутри один дорогой jackpot.'),
+      createFarmCase('farm-harvest-69','Farm Case · Harvest 69',pool,69,1,'Цена 69 ₽: дешёвый широкий пул + один дорогой предмет.'),
+      createFarmCase('farm-barn-89','Farm Case · Barn 89',pool,89,2,'Цена 89 ₽: больше дешёвых предметов, редкий шанс на дорогой скин.'),
+      createFarmCase('farm-jackpot-99','Farm Case · Jackpot 99',pool,99,3,'Цена 99 ₽: самый рискованный фарм-кейс до 100 ₽.')
+    ];
+  }
+  function isPersonalProfitCase(c){
+    try{
+      if(!c || c.kind === 'farm') return false;
+      const seed = String((state && (state.createdAt || state.version)) || 'guest');
+      return /profit-hunter|budget-random|budget-green/i.test(`${c.id} ${c.name}`) || stableNoise(`personal-profit:${seed}:${c.id || c.name}`) < .18;
+    }catch(e){ return false; }
   }
   function createSpecialCase(idv,name,rar,pool,price,text){
     pool = (pool || []).filter(Boolean).slice(0,240);
@@ -1359,8 +1431,9 @@
     return `<div class="${classes} ${isClassic?'classic-case':''} ${showCaseImage?'':'skin-collage-case'}" style="--theme:${color}">${mainImage}${coverHtml}${noImg}<span class="case-sheen"></span></div>`;
   }
   function caseCard(c){
-    const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
-    return `<article class="case-card" style="--theme:${themeColor(c)}"><span class="case-kind">${esc(kindLabel)}</span><span class="price-tier">${c.price<750?'дешёвый':c.price>6500?'дорогой':'средний'}</span>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
+    const kindLabel = c.kind === 'collection' ? 'Коллекция' : c.kind === 'farm' ? 'Фарм' : c.kind === 'special' ? 'Особый пул' : 'Кейс';
+    const balanceBadge = c.kind === 'farm' ? '<span class="pill">farm ≤100 ₽</span>' : (isPersonalProfitCase(c) ? '<span class="pill">твой окуп-кейс</span>' : '');
+    return `<article class="case-card" style="--theme:${themeColor(c)}"><span class="case-kind">${esc(kindLabel)}</span><span class="price-tier">${c.price<750?'дешёвый':c.price>6500?'дорогой':'средний'}</span>${caseVisual(c)}<h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} предметов</span><b>${fmt(c.price)}</b></div><div class="mini-list">${balanceBadge}${[...new Set(c.items.map(i=>i.rarity))].slice(0,5).map(r=>`<span class="pill">${esc(r)}</span>`).join('')}</div><small class="source">${esc(c.source||catalog.source)}</small><div class="case-actions"><button class="btn primary" data-open-case="${esc(c.id)}">Крутить</button><button class="btn" data-view-case="${esc(c.id)}">Пул</button></div></article>`;
   }
   function renderHome(){
     updateHeroShowcase();
@@ -1386,7 +1459,8 @@
     const officialRest = allCases.filter(c=>c.kind==='case' && !classicIds.has(c.id));
     const groups = [
       {id:'classic', nav:'Классические', title:'Классические CS2-кейсы', desc:'Самые узнаваемые оружейные кейсы.', arr:classic},
-      {id:'official', nav:'Оружейные', title:'Официальные оружейные кейсы', desc:'Остальные кейсы с оружейными скинами.', arr:officialRest},
+      {id:'official', nav:'Оружейные', title:'Официальные оружейные кейсы', desc:'Остальные кейсы с оружейными скинами.', arr:officialRest.filter(c=>c.kind!=='farm')},
+      {id:'farm', nav:'Фарм до 100 ₽', title:'Фарм-кейсы до 100 ₽', desc:'Много дешёвых пушек и один дорогой jackpot-предмет. Цена каждого кейса не выше 100 ₽.', arr:allCases.filter(c=>c.kind==='farm')},
       {id:'limited', nav:'Лимитированная серия', title:'Лимитированная серия / Armory Pass', desc:'Коллекции и временные наборы с редкими предметами.', arr:allCases.filter(c=>c.kind==='collection')},
       {id:'quality', nav:'По качеству', title:'Кейсы по качеству / цвету', desc:'Пулы по редкости: синие, фиолетовые, розовые, красные и другие.', arr:allCases.filter(c=>/^quality-/.test(c.id))},
       {id:'special', nav:'Ножи и перчатки', title:'Ножи и перчатки', desc:'Особые дорогие пулы с урезанными шансами.', arr:allCases.filter(c=>/^special-/.test(c.id))},
@@ -1396,7 +1470,7 @@
     ].filter(g=>g.arr && g.arr.length);
     const nav = groups.map(g=>`<button class="case-nav-btn" type="button" data-action="case-jump" data-target="${esc(g.id)}">${esc(g.nav)} <span>${g.arr.length}</span></button>`).join('');
     const sections = groups.map(g => `<section class="block case-section" id="case-section-${esc(g.id)}"><div class="head"><div><h2>${esc(g.title)}</h2><p>${esc(g.desc)}</p></div><p>${g.arr.length} шт.</p></div><div class="case-grid grid">${g.arr.map(caseCard).join('')}</div></section>`).join('');
-    root.innerHTML = `<div class="notice"><b>Каталог обновлён:</b> классические CS2-кейсы, лимитированная серия / Armory Pass, quality-пулы, стикеры, агенты, брелоки и нашивки. Доступны x3/x5/x10 и быстрое открытие.</div><div class="case-tools"><div class="case-category-nav" role="navigation" aria-label="Разделы кейсов"><button class="case-nav-btn all" type="button" data-action="case-jump" data-target="top">Все разделы</button>${nav}</div></div>${sections}<div class="case-scroll-fab" aria-label="Быстрая прокрутка"><button type="button" data-action="scroll-top" title="Наверх">↑<span>Вверх</span></button><button type="button" data-action="scroll-bottom" title="Вниз">↓<span>Вниз</span></button></div>`;
+    root.innerHTML = `<div class="notice"><b>Каталог обновлён:</b> классические CS2-кейсы, фарм-кейсы до 100 ₽, лимитированная серия / Armory Pass, quality-пулы, стикеры, агенты, брелоки и нашивки. Доступны x3/x5/x10 и быстрое открытие.</div><div class="case-tools"><div class="case-category-nav" role="navigation" aria-label="Разделы кейсов"><button class="case-nav-btn all" type="button" data-action="case-jump" data-target="top">Все разделы</button>${nav}</div></div>${sections}<div class="case-scroll-fab" aria-label="Быстрая прокрутка"><button type="button" data-action="scroll-top" title="Наверх">↑<span>Вверх</span></button><button type="button" data-action="scroll-bottom" title="Вниз">↓<span>Вниз</span></button></div>`;
   }
   function scrollCasesPage(where){
     const scroller = document.scrollingElement || document.documentElement;
@@ -1485,7 +1559,17 @@
     let w = dropBaseWeight(it,c);
     const price = Math.max(1, toNum(c && c.price, 1));
     const ratio = toNum(it.value,0) / price;
+    if(c && c.kind === 'farm'){
+      // Фарм-кейсы специально используют ручные веса: много дешёвых пушек + один дорогой jackpot.
+      w *= .98 + stableNoise(`${c && c.id || ''}:farm:${it.id || it.name}`) * .04;
+      return Math.max(0.00000001, w);
+    }
     w *= priceRiskMultiplier(ratio,c);
+    if(isPersonalProfitCase(c)){
+      if(ratio >= 1 && ratio < 5) w *= 1.65;
+      else if(ratio >= 5 && ratio < 25) w *= 1.28;
+      else if(ratio < .60) w *= .86;
+    }
     // Маленький детерминированный шум оставляет разнообразие, но не ломает экономику.
     w *= .96 + stableNoise(`${c && c.id || ''}:${it.id || it.name}`) * .08;
     return Math.max(0.00000001, w);
@@ -2886,7 +2970,8 @@
   }
   function resetSave(){
     if(!confirm(`Сбросить прогресс и вернуть стартовый баланс ${fmt(15000)}?`)) return;
-    try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); localStorage.removeItem(LS_KEY); }catch(e){}
+    const keepTheme = savedThemeId();
+    try{ allSaveKeys().forEach(k => localStorage.removeItem(k)); localStorage.removeItem(LS_KEY); localStorage.setItem(THEME_KEY, keepTheme); }catch(e){}
     try{ sessionStorage.removeItem(BACKUP_KEY); }catch(e){}
     try{ if(String(window.name||'').startsWith(WINDOW_SAVE_PREFIX)) window.name=''; }catch(e){}
     idbDelete();
@@ -3572,6 +3657,41 @@
     state.sold += total;
     earn(total, `Массовая продажа ${cheap.length} предметов`);
     renderInventory();
+  };
+
+
+  /* v31.16.2 — hidden promo tab + owner promo pack */
+  const V317_PROMOS = Object.freeze({
+    NEWPLAYER26:{type:'balance',amount:6000,label:'6 000 ₽'}, FARMCASE100:{type:'balance',amount:3500,label:'3 500 ₽'}, LUCKYFARM:{type:'item',min:100,max:8000,label:'farm skin'}, UPGRADEFIXED:{type:'xp_tokens',xp:700,tokens:30,label:'700 XP + 30 ST'}, NOFEESELL:{type:'balance',amount:5200,label:'5 200 ₽'}, THEMESTAY:{type:'profile',amount:1,label:'profile cosmetic'}, CASELAB2026:{type:'balance',amount:10000,label:'10 000 ₽'}, DAILYFARM:{type:'balance',amount:2800,label:'2 800 ₽'}, RUBLEBOOST:{type:'balance',amount:7500,label:'7 500 ₽'}, STICKERREFRESH:{type:'category',category:'sticker',min:500,max:14000,label:'sticker drop'},
+    MAJORRESET:{type:'tokens',amount:75,label:'75 ST'}, EVENTREFRESH:{type:'xp_tokens',xp:600,tokens:45,label:'600 XP + 45 ST'}, SEASONRENEW:{type:'balance',amount:12000,label:'12 000 ₽'}, SHOPPINGX3:{type:'tokens',amount:90,label:'90 ST'}, SHOPPINGX10:{type:'tokens',amount:180,label:'180 ST'}, CASECREATOR2:{type:'balance',amount:15000,label:'15 000 ₽'}, PROFILESKIN:{type:'profile',amount:1,label:'profile cosmetic'}, AVATAR2026:{type:'profile',amount:1,label:'profile cosmetic'}, DRAGONST:{type:'xp_tokens',xp:1200,tokens:100,label:'1200 XP + 100 ST'}, FALCONSTOKENS:{type:'tokens',amount:70,label:'70 ST'},
+    NAVISTORM:{type:'item',min:1000,max:22000,label:'team skin'}, SPIRITFAN:{type:'xp_tokens',xp:900,tokens:55,label:'900 XP + 55 ST'}, FAZEDROP:{type:'item',min:1200,max:26000,label:'team drop'}, VITALITYFARM:{type:'tokens',amount:65,label:'65 ST'}, CLOUDNINE9:{type:'balance',amount:9000,label:'9 000 ₽'}, VPLEGEND:{type:'balance',amount:8200,label:'8 200 ₽'}, FNATICFARM:{type:'balance',amount:4400,label:'4 400 ₽'}, NINEZLUCK:{type:'balance',amount:4900,label:'4 900 ₽'}, PARIPACK:{type:'profile',amount:1,label:'profile cosmetic'}, MINESSAFE2:{type:'item',min:500,max:15000,label:'safe mines drop'},
+    BATTLEBOOST2:{type:'xp',amount:1600,label:'1600 XP'}, CONTRACTFARM:{type:'balance',amount:5600,label:'5 600 ₽'}, COLLECTORLVL:{type:'xp_tokens',xp:1100,tokens:60,label:'1100 XP + 60 ST'}, ACHIEVEMENTUP:{type:'xp',amount:2100,label:'2100 XP'}, STAGEPASS:{type:'tokens',amount:120,label:'120 ST'}, GOLDRUSH:{type:'item',min:3000,max:30000,label:'gold rush drop'}, HOLOLUCK:{type:'category',category:'sticker',min:1200,max:28000,label:'holo sticker'}, PATCHFARM:{type:'category',category:'patch',min:300,max:10000,label:'patch drop'}, MARKETFARM:{type:'balance',amount:6800,label:'6 800 ₽'}, INVEST2026:{type:'balance',amount:9200,label:'9 200 ₽'},
+    PRESTIGE2:{type:'xp_tokens',xp:4500,tokens:160,label:'4500 XP + 160 ST'}, FREEDUST:{type:'balance',amount:3000,label:'3 000 ₽'}, INFERNODROP:{type:'item',min:500,max:15000,label:'map drop'}, NUKEPACK:{type:'item',min:700,max:18000,label:'map pack'}, ANUBISFARM:{type:'balance',amount:4100,label:'4 100 ₽'}, MIRAGEBOOST:{type:'balance',amount:4600,label:'4 600 ₽'}, VERTIGOCASE:{type:'item',min:900,max:19000,label:'case drop'}, OVERPASSXP:{type:'xp',amount:1300,label:'1300 XP'}, CACHELUCK:{type:'item',min:800,max:17000,label:'lucky item'}, SKINWAVE:{type:'item',min:1000,max:25000,label:'skin wave'},
+    BUDGETKING:{type:'balance',amount:3900,label:'3 900 ₽'}, HIGHRISK:{type:'item',min:5000,max:55000,label:'high risk item'}, SAFECASE:{type:'balance',amount:6200,label:'6 200 ₽'}, WEEKENDBOOST:{type:'xp_tokens',xp:1500,tokens:80,label:'1500 XP + 80 ST'}, FARMJACKPOT:{type:'item',min:9000,max:75000,label:'farm jackpot'}, STICKERKING2:{type:'category',category:'sticker',min:2000,max:45000,label:'rare sticker'}, PASSLEVELER:{type:'xp',amount:3000,label:'3000 XP'}, TOKENRAIN:{type:'tokens',amount:220,label:'220 ST'}, MINIWHALE:{type:'balance',amount:25000,label:'25 000 ₽'}, OWNERTEST:{type:'xp_tokens',xp:2500,tokens:125,label:'2500 XP + 125 ST'}
+  });
+  const v317PromoCount = () => Object.keys(PROMO_CODES).length + Object.keys(PROMO_REWARDS).length + Object.keys(V315_PROMOS).length + Object.keys(V317_PROMOS).length;
+  function v317ApplyPromo(code, reward){
+    state.usedPromos = Array.isArray(state.usedPromos) ? state.usedPromos : [];
+    if(state.usedPromos.includes(code)) return toast('Этот промокод уже активирован','warn');
+    state.usedPromos.push(code);
+    applyRewardObject(reward, 'Секретный промокод');
+    const input = $('#promoInput'); if(input) input.value = '';
+    save(); renderPromos();
+  }
+  const v317OldRedeemPromo = redeemPromo;
+  redeemPromo = function(){
+    const input = $('#promoInput');
+    const code = normalizePromoCode(input && input.value);
+    if(!code) return toast('Введи промокод','bad');
+    if(V317_PROMOS[code]) return v317ApplyPromo(code, V317_PROMOS[code]);
+    return v317OldRedeemPromo();
+  };
+  renderPromos = function(){
+    const root = $('#promosRoot'); if(!root) return;
+    const used = Array.isArray(state.usedPromos) ? state.usedPromos : [];
+    const total = v317PromoCount();
+    const hiddenHistory = used.length ? used.map((_,i)=>`<span class="pill">Код #${i+1} активирован</span>`).join('') : '<p class="small">Пока промокодов не активировано.</p>';
+    root.innerHTML = `<div class="promo-layout promo-layout-hidden"><article class="panel promo-card"><span class="kicker">Секретные промокоды</span><h2>Активировать бонус</h2><p>Введи код и получи награду. Конкретные промокоды на этой странице специально скрыты, чтобы игроки не видели список заранее.</p><div class="promo-form"><input id="promoInput" placeholder="Введи промокод" autocomplete="off" autocapitalize="characters"><button class="btn primary" data-action="redeem-promo">Активировать</button></div><p class="small">Использовано: <b>${used.length}</b> / ${total}. Доступные коды выдаёт владелец проекта.</p></article><article class="panel"><h3>История активаций</h3><div class="promo-used">${hiddenHistory}</div></article><article class="panel"><h3>Что может выпасть</h3><p class="small">Баланс, XP, ST-жетоны, скины, наклейки, патчи и косметика профиля. Названия самих кодов здесь не отображаются.</p></article></div>`;
   };
 
 

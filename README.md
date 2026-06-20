@@ -68,3 +68,16 @@
 ## v31.16
 - Added TENMILLION promo code for 10,000,000 ₽.
 - Added Upgrade modes 75% and 67% with automatic target selection.
+
+
+## v31.16.1 fixes
+
+- Исправлено сохранение темы между вкладками: очистка legacy-save больше не удаляет `cs2_case_lab_theme`.
+- Добавлена секция «Фарм до 100 ₽»: 4 кейса по 49/69/89/99 ₽ с большим пулом дешёвых пушек и одним дорогим jackpot-предметом.
+- Баланс усилен: у каждого пользователя часть кейсов помечается как персональные «окуп-кейсы», при этом сверхдорогие дропы остаются редкими.
+
+
+## v31.16.2 promo update
+- Added a hidden owner promo pack.
+- Promo page no longer displays concrete codes, examples, or public code lists.
+- Promo activation history hides exact code names.
