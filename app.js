@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = '31.18.0';
+  const VERSION = '31.19.0';
   const LS_KEY = 'cs2_case_lab_save';
   const BACKUP_KEY = 'cs2_case_lab_session_backup';
   const WINDOW_SAVE_PREFIX = 'CS2_CASE_LAB_WINDOW_SAVE:';
@@ -3454,6 +3454,106 @@
       try{ renderGlobals(); }catch(e){}
       return v318RenderPageFallback((document.body && document.body.dataset && document.body.dataset.page) || 'home', err);
     }
+  };
+
+
+
+  /* v31.19 — real profile render fix: do not show recovery card as normal profile */
+  function v319Arr(v){ return Array.isArray(v) ? v : []; }
+  function v319Num(v, d){ try{ return Math.max(0, Math.round(toNum(v, d||0))); }catch(e){ return Math.max(0, Math.round(Number(v)||d||0)); } }
+  function v319Fmt(v){ try{ return fmt(v); }catch(e){ return v319Num(v,0).toLocaleString('ru-RU') + ' ₽'; } }
+  function v319Level(){
+    try{
+      const raw = accountLevel();
+      return {
+        level: v319Num(raw.level,1),
+        current: v319Num(raw.current,0),
+        need: Math.max(1, v319Num(raw.need,600)),
+        pct: clamp(toNum(raw.pct,0),0,100),
+        canPrestige: !!raw.canPrestige,
+        prestigeTitle: raw.prestigeTitle || ('Prestige ' + v319Num(state.prestige,0))
+      };
+    }catch(e){
+      const xp = v319Num(state.xp,0);
+      const level = Math.max(1, Math.min(100, Math.floor(xp/650)+1));
+      const cur = xp % 650;
+      return {level, current:cur, need:650, pct:clamp(cur/650*100,0,100), canPrestige:level>=100, prestigeTitle:'Без престижа'};
+    }
+  }
+  function v319Power(){
+    try{ return profilePower(); }
+    catch(e){ return v319Num(state.balance,0) + v319Arr(state.inventory).reduce((a,x)=>a+v319Num(x && x.value,0),0); }
+  }
+  function v319Rank(){
+    try{ return profileRank(); }
+    catch(e){ return {icon:'⭐',name:'Profile',pct:0,nextText:'Ранг рассчитывается по балансу и инвентарю'}; }
+  }
+  function v319Storage(){
+    try{ return storageStatusText(); }
+    catch(e){ return '<span class="plus">save активен</span><br><small>Если сохранение старое, профиль всё равно загружается через v31.19.</small>'; }
+  }
+  function v319AvatarMap(){ return {classic:'✦',dragon:'🐉',major:'🏆',trader:'💼',knife:'🔪',sticker:'🏷️',gold:'🥇',phoenix:'🔥',diamond:'💎',cyber:'⚡',skull:'☠️',ninja:'🥷'}; }
+  function v319Avatars(){
+    try{ return typeof v317Avatars==='function' ? v317Avatars() : Object.entries(v319AvatarMap()); }
+    catch(e){ return Object.entries(v319AvatarMap()); }
+  }
+  function v319Frames(){
+    try{ return typeof v317Frames==='function' ? v317Frames() : [['default','Default'],['gold','Gold'],['neon','Neon'],['dragon','Dragon'],['major','Major'],['prestige','Prestige']]; }
+    catch(e){ return [['default','Default'],['gold','Gold'],['neon','Neon'],['dragon','Dragon'],['major','Major'],['prestige','Prestige']]; }
+  }
+  function v319Titles(){
+    try{ return profileTitleList(); }
+    catch(e){ return ['Новичок','Коллекционер','Трейдер','Контрактор','Case Master','Dragon Hunter','Major Baron','Global Collector','Sticker Emperor','Prestige Lord']; }
+  }
+  function v319TxHtml(){
+    const tx = v319Arr(state.tx).slice(0,28);
+    if(!tx.length) return '<div class="empty">История пуста.</div>';
+    return tx.map(t=>`<div class="tx"><div><b>${esc((t&&t.text)||'Операция')}</b><small>${new Date((t&&t.time)||Date.now()).toLocaleString('ru-RU')}</small></div><strong class="${v319Num(t&&t.amount,0)>=0?'plus':'minus'}">${v319Num(t&&t.amount,0)>=0?'+':''}${v319Fmt(t&&t.amount)}</strong></div>`).join('');
+  }
+  function v319ChartHtml(){
+    const vals = [
+      ['Кейсы', v319Num(state.opened,0)],
+      ['Апгрейды', v319Num(state.upgrades,0)],
+      ['Контракты', v319Num(state.contracts,0)],
+      ['Battle', v319Num(state.battles,0)],
+      ['Победы', v319Num(state.wins,0)],
+      ['Сапёр', v319Num(state.minesWins,0)],
+      ['Крафты', v319Num(state.crafts,0)],
+      ['Престиж', v319Num(state.prestige,0)]
+    ];
+    const max = Math.max(1, ...vals.map(x=>x[1]));
+    return `<div class="profile-chart">${vals.map(x=>`<div><span>${esc(x[0])}</span><i><b style="width:${clamp(x[1]/max*100,2,100)}%"></b></i><strong>${x[1]}</strong></div>`).join('')}</div>`;
+  }
+  function v319CosmeticsHtml(){
+    const avatars = v319Avatars();
+    const titles = v319Titles();
+    const frames = v319Frames();
+    return `<div class="cosmetic-grid"><div><h3>Аватар</h3><div class="craft-row">${avatars.map(a=>`<button class="small-btn ${state.avatar===a[0]?'active':''}" data-action="set-avatar" data-avatar="${esc(a[0])}">${esc(a[1])}</button>`).join('')}</div></div><div><h3>Титул</h3><div class="craft-row">${titles.map(t=>`<button class="small-btn ${state.title===t?'active':''}" data-action="set-title" data-title="${esc(t)}">${esc(t)}</button>`).join('')}</div></div><div><h3>Рамка профиля</h3><div class="craft-row">${frames.map(f=>`<button class="small-btn ${state.profileFrame===f[0]?'active':''}" data-action="set-frame" data-frame="${esc(f[0])}">${esc(f[1])}</button>`).join('')}</div></div></div>`;
+  }
+  function v319RecentItemsHtml(){
+    const items = v319Arr(state.inventory).slice(0,8);
+    if(!items.length) return '<div class="empty">Инвентарь пуст. Открой кейсы, чтобы заполнить профиль.</div>';
+    return `<div class="grid cards-4">${items.map(it=>`<article class="mini-card"><h3>${esc((it&&it.displayName)||(it&&it.name)||'Item')}</h3><p>${esc((it&&it.category)||'Предмет')} · <b>${v319Fmt(it&&it.value)}</b></p><small>${(it&&it.protected)?'🔒 Защищён':(it&&it.favorite)?'⭐ Избранное':'Обычный предмет'}</small></article>`).join('')}</div>`;
+  }
+  renderProfile = function(){
+    const root = $('#profileRoot');
+    if(!root) return;
+    try{ state = normalizeState(state); }catch(e){ try{ state = normalizeState({}); }catch(_e){} }
+    const lvl = v319Level();
+    const rank = v319Rank();
+    const avatar = v319AvatarMap()[state.avatar] || '✦';
+    const inv = v319Arr(state.inventory);
+    const protectedCount = inv.filter(x=>x && x.protected).length;
+    const favCount = inv.filter(x=>x && x.favorite).length;
+    const nextPrestige = lvl.canPrestige ? `<button class="btn primary" data-action="claim-prestige">Получить престиж</button>` : `<a class="btn" href="quests.html">Прокачать уровень</a>`;
+    root.innerHTML = `<section class="panel profile-head profile-frame-${esc(state.profileFrame||'default')}"><div class="profile-avatar">${esc(avatar)}</div><div><span class="kicker">${esc(state.title||'Новичок')}</span><h2>Уровень ${lvl.level} · ${esc(lvl.prestigeTitle||'Без престижа')}</h2><div class="bp-bar"><span style="width:${lvl.pct}%"></span></div><small>${lvl.current}/${lvl.need} XP · ${v319Num(state.seasonTokens,0)} ST · Престиж: ${v319Num(state.prestige,0)}</small></div><div class="profile-actions">${nextPrestige}<a class="btn" href="quests.html">Развитие</a></div></section>
+    <div class="grid cards-4 block"><div class="stat"><small>Баланс</small><b>${v319Fmt(state.balance)}</b></div><div class="stat"><small>Инвентарь</small><b>${inv.length}</b></div><div class="stat"><small>Оценка профиля</small><b>${v319Fmt(v319Power())}</b></div><div class="stat"><small>ST</small><b>${v319Num(state.seasonTokens,0)}</b></div></div>
+    <div class="grid cards-3 block"><div class="panel rank-panel"><h3>Ранг профиля</h3><div class="rank-badge">${esc(rank.icon||'⭐')} ${esc(rank.name||'Profile')}</div><p>Защищено: <b>${protectedCount}</b> · Избранное: <b>${favCount}</b></p><div class="bp-bar"><span style="width:${clamp(rank.pct||0,0,100)}%"></span></div><small>${esc(rank.nextText||'Продолжай собирать предметы')}</small></div><div class="panel"><h3>Статистика</h3><p>Открыто кейсов: <b>${v319Num(state.opened,0)}</b></p><p>Апгрейды: <b>${v319Num(state.upgrades,0)}</b></p><p>Контракты: <b>${v319Num(state.contracts,0)}</b></p><p>Battle: <b>${v319Num(state.battles,0)}</b> / побед <b>${v319Num(state.wins,0)}</b></p><p>Сапёр: <b>${v319Num(state.mines||0,0)}</b> игр / <b>${v319Num(state.minesWins,0)}</b> побед</p><p>Продано: <b>${v319Fmt(state.sold)}</b></p></div><div class="panel"><h3>Сохранение</h3><p>Версия: <b>${esc(VERSION)}</b></p><p>${v319Storage()}</p><button class="btn" data-action="export-save">Экспорт</button><button class="btn" data-action="import-save">Импорт</button><textarea id="saveBox" placeholder="Тут появится или сюда вставляется save"></textarea></div></div>
+    <section class="panel block"><div class="head"><h2>Кастомизация профиля</h2></div>${v319CosmeticsHtml()}</section>
+    <section class="panel block"><div class="head"><h2>Графики статистики</h2></div>${v319ChartHtml()}</section>
+    <section class="panel block"><div class="head"><h2>Последние предметы</h2></div>${v319RecentItemsHtml()}</section>
+    <section class="block"><div class="head"><h2>История баланса</h2></div><div class="tx-list">${v319TxHtml()}</div></section>
+    <section class="panel danger block"><div class="head"><div><h2>Сброс сохранения</h2><p>Используй только если нужно полностью начать заново.</p></div><button class="btn red" data-action="reset-save">Сбросить прогресс</button></div></section>`;
   };
 
 
